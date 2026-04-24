@@ -590,6 +590,24 @@ Flag rules:
 - `--ignore-deps` skips dependency installation and records a warning in the result output; it must not create fake dependency lock entries.
 - `--full-depth` enables depth-limited recursive source discovery for compatibility with repositories that store Skills outside common priority paths.
 
+### `skit search <query>`
+
+Searches for Skills using a skills.sh-compatible search API.
+
+Environment:
+
+- `SKIT_SEARCH_API_URL`: optional search API base URL.
+- `SKILLS_API_URL`: compatibility fallback used when `SKIT_SEARCH_API_URL` is unset.
+
+Behavior:
+
+- Sends `GET /api/search?q=<query>&limit=<limit>` to the configured API.
+- Parses `skills[]` items with `id`, `name`, `source`, and `installs`.
+- Sorts results by install count descending.
+- Prints installable hints in the form `skit add <source> --skill <name>`.
+- Supports `--json`.
+- Does not install or mutate lock/store state.
+
 ### `skit install`
 
 Restores project Skills from `.skit/lock.json`.
@@ -803,6 +821,7 @@ Install should warn on:
 ### Commands
 
 - `add` local Skill.
+- `search` Skills.
 - `install` from lock.
 - `list` project/global.
 - `remove` project/global.

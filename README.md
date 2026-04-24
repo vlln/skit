@@ -81,10 +81,17 @@ Check store integrity and declared requirements:
 skit doctor
 ```
 
+Search for Skills:
+
+```sh
+skit search "skill create"
+```
+
 ## Commands
 
 ```text
 skit add <source>         Add a Skill source to the skit store and lock
+skit search <query>       Search for Skills
 skit install              Restore Skills from the lock file
 skit list                 List locked Skills
 skit remove <name>        Remove a Skill from the lock file
@@ -249,6 +256,7 @@ Re-add the Skill with `skit add` to make it restorable.
 Near-term:
 
 - registry and well-known provider fetching
+- richer search providers beyond the current skills.sh-compatible API
 - `skit tidy` for unused lock/store/tmp entries
 - richer source and requirement diagnostics
 - optional agent activation/sync as a separate command, without changing the

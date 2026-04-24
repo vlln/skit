@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,6 +94,36 @@ func TestInspectJSON(t *testing.T) {
 	}
 	if result.Name != "demo" {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestSearchJSON(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+		  "skills": [
+		    {"id":"skill-creator","name":"skill-creator","source":"openclaw/openclaw","installs":42}
+		  ]
+		}`))
+	}))
+	defer server.Close()
+	t.Setenv("SKIT_SEARCH_API_URL", server.URL)
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"search", "skill", "create", "--json"}, &out, &errOut); code != 0 {
+		t.Fatalf("search code = %d, stderr = %q", code, errOut.String())
+	}
+	var results []struct {
+		Name   string `json:"name"`
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &results); err != nil {
+		t.Fatalf("json = %q: %v", out.String(), err)
+	}
+	if len(results) != 1 || results[0].Name != "skill-creator" || results[0].Source != "openclaw/openclaw" {
+		t.Fatalf("results = %#v", results)
 	}
 }
 

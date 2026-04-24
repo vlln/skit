@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/vlln/skit/internal/app"
 	"github.com/vlln/skit/internal/lockfile"
@@ -27,6 +29,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "add":
 		return runAdd(args[1:], stdout, stderr)
+	case "search", "find":
+		return runSearch(args[1:], stdout, stderr)
 	case "install":
 		return runInstall(args[1:], stdout, stderr)
 	case "list", "ls":
@@ -58,6 +62,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  add        Add a local Skill to the skit store")
+	fmt.Fprintln(w, "  search     Search for Skills")
 	fmt.Fprintln(w, "  install    Restore Skills from lock")
 	fmt.Fprintln(w, "  list       List locked Skills")
 	fmt.Fprintln(w, "  remove     Remove a Skill from lock")
@@ -71,6 +76,69 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Common flags:")
 	fmt.Fprintln(w, "  --full-depth  Search recursively for Skills when adding a source")
+}
+
+func runSearch(args []string, stdout, stderr io.Writer) int {
+	opts, rest, err := parseCommon(args)
+	if err != nil {
+		fmt.Fprintln(stderr, "skit search:", err)
+		return 2
+	}
+	if opts.scope == app.Global || opts.skill != "" || opts.all || opts.ignoreDeps || opts.fullDepth {
+		fmt.Fprintln(stderr, "skit search: --global, --skill, --all, --ignore-deps, and --full-depth are not supported")
+		return 2
+	}
+	query := strings.TrimSpace(strings.Join(rest, " "))
+	if query == "" {
+		fmt.Fprintln(stderr, "skit search: expected a query")
+		return 2
+	}
+	results, err := app.Search(app.SearchRequest{Context: context.Background(), Query: query, Limit: 10})
+	if err != nil {
+		fmt.Fprintln(stderr, "skit search:", err)
+		return 1
+	}
+	if opts.json {
+		return writeJSON(stdout, stderr, results)
+	}
+	if len(results) == 0 {
+		fmt.Fprintf(stdout, "no skills found for %q\n", query)
+		return 0
+	}
+	fmt.Fprintln(stdout, "Install with: skit add <source> --skill <name>")
+	fmt.Fprintln(stdout)
+	for _, result := range results {
+		source := result.Source
+		if source == "" {
+			source = result.Slug
+		}
+		fmt.Fprintf(stdout, "%s\t%s", result.Name, source)
+		if result.Installs > 0 {
+			fmt.Fprintf(stdout, "\t%s", formatInstalls(result.Installs))
+		}
+		fmt.Fprintln(stdout)
+		if source != "" && result.Name != "" {
+			fmt.Fprintf(stdout, "  skit add %s --skill %s\n", source, result.Name)
+		}
+	}
+	return 0
+}
+
+func formatInstalls(count int) string {
+	switch {
+	case count >= 1_000_000:
+		return fmt.Sprintf("%.1fM installs", trimFloat(float64(count)/1_000_000))
+	case count >= 1_000:
+		return fmt.Sprintf("%.1fK installs", trimFloat(float64(count)/1_000))
+	case count == 1:
+		return "1 install"
+	default:
+		return fmt.Sprintf("%d installs", count)
+	}
+}
+
+func trimFloat(v float64) float64 {
+	return float64(int(v*10)) / 10
 }
 
 func runAdd(args []string, stdout, stderr io.Writer) int {

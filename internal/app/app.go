@@ -16,6 +16,7 @@ import (
 	"github.com/vlln/skit/internal/hash"
 	"github.com/vlln/skit/internal/lockfile"
 	"github.com/vlln/skit/internal/metadata"
+	"github.com/vlln/skit/internal/search"
 	"github.com/vlln/skit/internal/skill"
 	"github.com/vlln/skit/internal/source"
 	"github.com/vlln/skit/internal/store"
@@ -37,6 +38,19 @@ type AddRequest struct {
 	All        bool
 	IgnoreDeps bool
 	FullDepth  bool
+}
+
+type SearchRequest struct {
+	Context context.Context
+	Query   string
+	Limit   int
+}
+
+type SearchResult = search.Result
+
+func Search(req SearchRequest) ([]SearchResult, error) {
+	client := search.NewClient()
+	return client.Search(ctx(req.Context), req.Query, req.Limit)
 }
 
 type AddResult struct {
