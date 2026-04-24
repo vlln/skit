@@ -1,0 +1,7 @@
+schema: skit.skill/v1
+version: 2.0.0
+requires:
+  bins:
+    - jq
+registry:
+  slug: with-manifest
