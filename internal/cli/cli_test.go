@@ -13,6 +13,18 @@ import (
 	"github.com/vlln/skit/internal/lockfile"
 )
 
+func TestMain(m *testing.M) {
+	root, err := os.MkdirTemp("", "skit-cli-test-*")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
+	_ = os.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
+	code := m.Run()
+	_ = os.RemoveAll(root)
+	os.Exit(code)
+}
+
 func TestRunHelp(t *testing.T) {
 	var out, err bytes.Buffer
 	code := Run([]string{"--help"}, &out, &err)
@@ -40,7 +52,7 @@ func TestRunVersion(t *testing.T) {
 
 func TestUnknownFlagErrors(t *testing.T) {
 	var out, err bytes.Buffer
-	code := Run([]string{"add", "--skil", "demo", "./demo"}, &out, &err)
+	code := Run([]string{"install", "--skil", "demo", "./demo"}, &out, &err)
 	if code != 2 {
 		t.Fatalf("code = %d, want 2", code)
 	}
@@ -55,8 +67,8 @@ func TestListJSON(t *testing.T) {
 	writeCLITestSkill(t, filepath.Join(project, "demo"), "demo")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("add code = %d, stderr = %q", code, errOut.String())
+	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
 	}
 	out.Reset()
 	errOut.Reset()
@@ -78,8 +90,8 @@ func TestInspectJSON(t *testing.T) {
 	writeCLITestSkill(t, filepath.Join(project, "demo"), "demo")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("add code = %d, stderr = %q", code, errOut.String())
+	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
 	}
 	out.Reset()
 	errOut.Reset()
@@ -133,8 +145,8 @@ func TestDoctorJSONReturnsErrorStatus(t *testing.T) {
 	writeCLITestSkillWithBody(t, filepath.Join(project, "demo"), "---\nname: demo\ndescription: Test skill.\nmetadata:\n  skit:\n    requires:\n      bins:\n        - definitely-missing-skit-bin\n---\n# Demo\n")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("add code = %d, stderr = %q", code, errOut.String())
+	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
 	}
 	out.Reset()
 	errOut.Reset()
@@ -154,15 +166,15 @@ func TestDoctorJSONReturnsErrorStatus(t *testing.T) {
 	}
 }
 
-func TestAddPrintsDependencyAndInspectJSONIncludesEdge(t *testing.T) {
+func TestInstallPrintsDependencyAndInspectJSONIncludesEdge(t *testing.T) {
 	project := t.TempDir()
 	chdir(t, project)
 	writeCLITestSkill(t, filepath.Join(project, "dep"), "dep")
 	writeCLITestSkillWithBody(t, filepath.Join(project, "parent"), "---\nname: parent\ndescription: Parent skill.\nmetadata:\n  skit:\n    dependencies:\n      - source: "+filepath.Join(project, "dep")+"\n---\n# Parent\n")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "./parent"}, &out, &errOut); code != 0 {
-		t.Fatalf("add code = %d, stderr = %q", code, errOut.String())
+	if code := Run([]string{"install", "./parent"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
 	}
 	if !strings.Contains(out.String(), "added dependency dep ") {
 		t.Fatalf("stdout = %q", out.String())
@@ -185,15 +197,15 @@ func TestAddPrintsDependencyAndInspectJSONIncludesEdge(t *testing.T) {
 	}
 }
 
-func TestAddIgnoreDepsCLI(t *testing.T) {
+func TestInstallIgnoreDepsCLI(t *testing.T) {
 	project := t.TempDir()
 	chdir(t, project)
 	writeCLITestSkill(t, filepath.Join(project, "dep"), "dep")
 	writeCLITestSkillWithBody(t, filepath.Join(project, "parent"), "---\nname: parent\ndescription: Parent skill.\nmetadata:\n  skit:\n    dependencies:\n      - source: "+filepath.Join(project, "dep")+"\n---\n# Parent\n")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "--ignore-deps", "./parent"}, &out, &errOut); code != 0 {
-		t.Fatalf("add code = %d, stderr = %q", code, errOut.String())
+	if code := Run([]string{"install", "--ignore-deps", "./parent"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
 	}
 	if strings.Contains(out.String(), "added dependency") {
 		t.Fatalf("stdout = %q", out.String())
@@ -203,43 +215,73 @@ func TestAddIgnoreDepsCLI(t *testing.T) {
 	}
 }
 
-func TestAddOptionalDependencyWarningCLI(t *testing.T) {
+func TestInstallOptionalDependencyWarningCLI(t *testing.T) {
 	project := t.TempDir()
 	chdir(t, project)
 	writeCLITestSkillWithBody(t, filepath.Join(project, "parent"), "---\nname: parent\ndescription: Parent skill.\nmetadata:\n  skit:\n    dependencies:\n      - source: "+filepath.Join(project, "missing")+"\n        optional: true\n---\n# Parent\n")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "./parent"}, &out, &errOut); code != 0 {
-		t.Fatalf("add code = %d, stderr = %q", code, errOut.String())
+	if code := Run([]string{"install", "./parent"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
 	}
 	if !strings.Contains(errOut.String(), "optional dependency for parent failed") {
 		t.Fatalf("stderr = %q", errOut.String())
 	}
 }
 
-func TestAddFullDepthCLI(t *testing.T) {
+func TestInstallFullDepthCLI(t *testing.T) {
 	project := t.TempDir()
 	chdir(t, project)
 	writeCLITestSkill(t, filepath.Join(project, "root-skill"), "root-skill")
 	writeCLITestSkill(t, filepath.Join(project, "packages", "tools", "skills", "deep-skill"), "deep-skill")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "--full-depth", "--all", "."}, &out, &errOut); code != 0 {
-		t.Fatalf("add code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	if code := Run([]string{"install", "--full-depth", "--all", "."}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
 	}
 	if !strings.Contains(out.String(), "added root-skill ") || !strings.Contains(out.String(), "added deep-skill ") {
 		t.Fatalf("stdout = %q", out.String())
 	}
 }
 
-func TestAddInternalSkipPrintsReasonCLI(t *testing.T) {
+func TestInstallSkillFlagAcceptsMultipleValuesOnce(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	writeCLITestSkill(t, filepath.Join(project, "repo", "one"), "one")
+	writeCLITestSkill(t, filepath.Join(project, "repo", "two"), "two")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./repo", "--skill", "one", "two"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "added one ") || !strings.Contains(out.String(), "added two ") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestInstallRejectsRepeatedSkillFlag(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	writeCLITestSkill(t, filepath.Join(project, "repo", "one"), "one")
+	writeCLITestSkill(t, filepath.Join(project, "repo", "two"), "two")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./repo", "--skill", "one", "--skill", "two"}, &out, &errOut); code != 2 {
+		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "--skill may only be provided once") {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+}
+
+func TestInstallInternalSkipPrintsReasonCLI(t *testing.T) {
 	project := t.TempDir()
 	chdir(t, project)
 	writeCLITestSkillWithBody(t, filepath.Join(project, "repo", "internal-skill"), "---\nname: internal-skill\ndescription: Internal skill.\nmetadata:\n  internal: true\n---\n# Internal\n")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "./repo"}, &out, &errOut); code != 1 {
-		t.Fatalf("add code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	if code := Run([]string{"install", "./repo"}, &out, &errOut); code != 1 {
+		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
 	}
 	if !strings.Contains(errOut.String(), "internal skill") {
 		t.Fatalf("stderr = %q", errOut.String())
@@ -253,8 +295,8 @@ func TestUpdateCommand(t *testing.T) {
 	writeCLITestSkill(t, path, "demo")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("add code = %d, stderr = %q", code, errOut.String())
+	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
 	}
 	writeCLITestSkillWithBody(t, path, "---\nname: demo\ndescription: Updated skill.\n---\n# Updated\n")
 	out.Reset()
@@ -274,8 +316,8 @@ func TestUpdateJSON(t *testing.T) {
 	writeCLITestSkill(t, path, "demo")
 
 	var out, errOut bytes.Buffer
-	if code := Run([]string{"add", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("add code = %d, stderr = %q", code, errOut.String())
+	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
 	}
 	writeCLITestSkillWithBody(t, path, "---\nname: demo\ndescription: Updated skill.\n---\n# Updated\n")
 	out.Reset()

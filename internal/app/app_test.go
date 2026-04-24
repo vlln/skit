@@ -14,6 +14,18 @@ import (
 	"github.com/vlln/skit/internal/store"
 )
 
+func TestMain(m *testing.M) {
+	root, err := os.MkdirTemp("", "skit-app-test-*")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
+	_ = os.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
+	code := m.Run()
+	_ = os.RemoveAll(root)
+	os.Exit(code)
+}
+
 func TestLocalClosedLoop(t *testing.T) {
 	project := t.TempDir()
 	source := filepath.Join(project, "demo")
@@ -26,10 +38,13 @@ func TestLocalClosedLoop(t *testing.T) {
 	if len(added.Entries) != 1 {
 		t.Fatalf("entries = %#v", added.Entries)
 	}
-	if _, err := os.Stat(filepath.Join(project, ".skit", "lock.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(project, ".agent", "skills", "skit.lock")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(added.StorePaths[0]); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(filepath.Join(project, ".agent", "skills", "demo")); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatal(err)
 	}
 
@@ -55,6 +70,9 @@ func TestLocalClosedLoop(t *testing.T) {
 	if len(listed) != 0 {
 		t.Fatalf("listed after remove = %#v", listed)
 	}
+	if _, err := os.Lstat(filepath.Join(project, ".agent", "skills", "demo")); !os.IsNotExist(err) {
+		t.Fatalf("active symlink still exists after remove: %v", err)
+	}
 }
 
 func TestInstallRestoresMissingStoreFromLocalSource(t *testing.T) {
@@ -66,7 +84,7 @@ func TestInstallRestoresMissingStoreFromLocalSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.RemoveAll(filepath.Join(project, ".skit", "store")); err != nil {
+	if err := os.RemoveAll(added.StorePaths[0]); err != nil {
 		t.Fatal(err)
 	}
 	result, err := Install(InstallRequest{CWD: project, Scope: Project})
@@ -83,15 +101,15 @@ func TestInstallRestoresMissingStoreFromLocalSource(t *testing.T) {
 
 func TestInstallRejectsCorruptExistingStore(t *testing.T) {
 	project := t.TempDir()
-	source := filepath.Join(project, "demo")
-	writeSkill(t, source, "demo")
+	source := filepath.Join(project, "corrupt-demo")
+	writeSkill(t, source, "corrupt-demo")
 
 	added, err := Add(AddRequest{CWD: project, Scope: Project, Source: source})
 	if err != nil {
 		t.Fatal(err)
 	}
 	storeSkill := filepath.Join(added.StorePaths[0], "SKILL.md")
-	if err := os.WriteFile(storeSkill, []byte("---\nname: demo\ndescription: Tampered skill.\n---\n# demo\n"), 0644); err != nil {
+	if err := os.WriteFile(storeSkill, []byte("---\nname: corrupt-demo\ndescription: Tampered skill.\n---\n# corrupt-demo\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -210,7 +228,7 @@ func TestUpdateGitHubSourceWithLocalGitRepo(t *testing.T) {
 		},
 		Hashes: lockfile.Hashes{Tree: "sha256-old", SkillMD: "sha256-old"},
 	}
-	if err := lockfile.Write(filepath.Join(project, ".skit", "lock.json"), lock); err != nil {
+	if err := lockfile.Write(filepath.Join(project, ".agent", "skills", "skit.lock"), lock); err != nil {
 		t.Fatal(err)
 	}
 
@@ -263,7 +281,7 @@ func TestUpdateGenericGitSourceWithLocalGitRepo(t *testing.T) {
 		},
 		Hashes: lockfile.Hashes{Tree: "sha256-old", SkillMD: "sha256-old"},
 	}
-	if err := lockfile.Write(filepath.Join(project, ".skit", "lock.json"), lock); err != nil {
+	if err := lockfile.Write(filepath.Join(project, ".agent", "skills", "skit.lock"), lock); err != nil {
 		t.Fatal(err)
 	}
 
@@ -287,7 +305,7 @@ func TestUpdateGenericGitSourceWithLocalGitRepo(t *testing.T) {
 	}
 }
 
-func TestAddRequiresSkillForMultipleSkills(t *testing.T) {
+func TestInstallRequiresSkillForMultipleSkills(t *testing.T) {
 	project := t.TempDir()
 	repo := filepath.Join(project, "repo")
 	writeSkill(t, filepath.Join(repo, "one"), "one")
@@ -306,7 +324,7 @@ func TestAddRequiresSkillForMultipleSkills(t *testing.T) {
 	}
 }
 
-func TestAddSkipsInternalUnlessSkillExplicit(t *testing.T) {
+func TestInstallSkipsInternalUnlessSkillExplicit(t *testing.T) {
 	project := t.TempDir()
 	repo := filepath.Join(project, "repo")
 	writeSkillWithBody(t, filepath.Join(repo, "internal-skill"), "---\nname: internal-skill\ndescription: Internal skill.\nmetadata:\n  internal: true\n---\n# Internal\n")
@@ -331,7 +349,7 @@ func TestAddSkipsInternalUnlessSkillExplicit(t *testing.T) {
 	}
 }
 
-func TestAddInstallsRequiredDependencies(t *testing.T) {
+func TestInstallInstallsRequiredDependencies(t *testing.T) {
 	project := t.TempDir()
 	dep := filepath.Join(project, "dep")
 	parent := filepath.Join(project, "parent")
@@ -367,7 +385,7 @@ func TestAddInstallsRequiredDependencies(t *testing.T) {
 	}
 }
 
-func TestAddOptionalDependencyFailureWarns(t *testing.T) {
+func TestInstallOptionalDependencyFailureWarns(t *testing.T) {
 	project := t.TempDir()
 	parent := filepath.Join(project, "parent")
 	missing := filepath.Join(project, "missing")
@@ -388,7 +406,7 @@ func TestAddOptionalDependencyFailureWarns(t *testing.T) {
 	}
 }
 
-func TestAddIgnoreDepsSkipsEdges(t *testing.T) {
+func TestInstallIgnoreDepsSkipsEdges(t *testing.T) {
 	project := t.TempDir()
 	dep := filepath.Join(project, "dep")
 	parent := filepath.Join(project, "parent")
@@ -414,7 +432,7 @@ func TestAddIgnoreDepsSkipsEdges(t *testing.T) {
 	}
 }
 
-func TestAddRejectsCircularDependencies(t *testing.T) {
+func TestInstallRejectsCircularDependencies(t *testing.T) {
 	project := t.TempDir()
 	a := filepath.Join(project, "a")
 	b := filepath.Join(project, "b")
@@ -483,7 +501,7 @@ func TestSafetyWarningsAreRecordedAndDiagnosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(added.Warnings) != 1 || !containsText(added.Warnings, "curl/wget piped to shell") {
-		t.Fatalf("add warnings = %#v", added.Warnings)
+		t.Fatalf("install warnings = %#v", added.Warnings)
 	}
 	if len(added.Entries[0].Warnings) != 1 || !containsText(added.Entries[0].Warnings, "curl/wget piped to shell") {
 		t.Fatalf("entry warnings = %#v", added.Entries[0].Warnings)

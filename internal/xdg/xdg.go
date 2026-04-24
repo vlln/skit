@@ -26,3 +26,14 @@ func StateHome() string {
 	}
 	return filepath.Join(home, ".local", "state")
 }
+
+func CacheHome() string {
+	if v := os.Getenv("XDG_CACHE_HOME"); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "."
+	}
+	return filepath.Join(home, ".cache")
+}

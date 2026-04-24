@@ -1,26 +1,27 @@
 # skit
 
-`skit` is a fast, reproducible Skill management CLI for agent ecosystems.
+`skit` is a small, reproducible Skill manager for agent ecosystems.
 
-It is designed as a small Go-style toolchain for [agentskills.io](../agentskills.io/)
-`SKILL.md` packages: parse Skills, fetch them from common sources, store immutable
-snapshots, write deterministic lock files, and diagnose local requirements.
+It works with `SKILL.md` packages as defined by [agentskills.io](../agentskills.io/):
+discover Skills, fetch them from local and git sources, store immutable
+snapshots, write deterministic locks, activate Skills through symlinks, and
+diagnose declared local requirements.
 
-> Status: early v1 implementation. `skit` stores and locks Skills; it does not
-> activate them into Claude Code, Codex, OpenCode, or other agent target
-> directories yet.
+> Status: early v1. The CLI and lock format are still allowed to change before a
+> first stable release.
 
-## Why skit
+## Features
 
-- **Compatible first**: reads standard `SKILL.md` frontmatter and accepts common
-  source syntax from the current Skill ecosystem.
-- **Reproducible by default**: stores content-addressed snapshots and records
-  source identity, resolved refs, and content hashes in `.skit/lock.json`.
-- **No code execution on install**: install/fetch operations copy and hash files;
-  Skill scripts are never run automatically.
-- **Unix-shaped CLI**: explicit commands, deterministic JSON output where useful,
-  and project/global scopes.
-- **Go native**: single binary, fast startup, simple cross-platform distribution.
+- Standards-oriented `SKILL.md` parsing with ecosystem compatibility metadata.
+- Content-addressed global store under XDG data directories.
+- Project and global activation via `.agent/skills` symlinks.
+- Deterministic `skit.lock` files stored next to active Skills.
+- Local, GitHub, GitLab, SSH git, and generic git source parsing/fetching.
+- Dependency locking for `metadata.skit.dependencies`.
+- Requirement diagnostics for declared binaries, environment variables, config,
+  platforms, and stored warnings.
+- JSON output for automation-friendly commands.
+- No Skill code execution during install, inspect, update, or restore.
 
 ## Installation
 
@@ -40,64 +41,63 @@ go build -o skit ./cmd/skit
 Requirements:
 
 - Go 1.23+
-- `git` for GitHub, GitLab, SSH git, and generic `.git` sources
+- `git` for remote git sources
 
 ## Quick Start
 
-Create a new Skill:
+Create a Skill:
 
 ```sh
 skit init my-skill
 ```
 
-Add a local Skill to the project store and lock:
+Install a local Skill into the current project:
 
 ```sh
-skit add ./my-skill
+skit install ./my-skill
 ```
 
-Add a Skill from a GitHub repository:
+Install a Skill from a GitHub repository:
 
 ```sh
-skit add github:owner/repo --skill skill-name
+skit install github:owner/repo --skill skill-name
 ```
 
-Restore locked Skills into the content-addressed store:
+Install more than one Skill from the same source:
+
+```sh
+skit install github:owner/repo --skill skill-one skill-two
+```
+
+Restore active symlinks from the lock:
 
 ```sh
 skit install
 ```
 
-Inspect a locked Skill or a source:
-
-```sh
-skit inspect skill-name
-skit inspect github:owner/repo --skill skill-name --json
-```
-
-Check store integrity and declared requirements:
-
-```sh
-skit doctor
-```
-
-Search for Skills:
+Search for published Skills:
 
 ```sh
 skit search "skill create"
 ```
 
+Inspect and diagnose:
+
+```sh
+skit inspect skill-name
+skit doctor
+```
+
 ## Commands
 
 ```text
-skit add <source>         Add a Skill source to the skit store and lock
+skit install [source...]  Install sources, or restore from skit.lock
 skit search <query>       Search for Skills
-skit install              Restore Skills from the lock file
 skit list                 List locked Skills
-skit remove <name>        Remove a Skill from the lock file
+skit remove <name>        Remove a locked and active Skill
 skit update [name]        Refresh locked Skills from their sources
 skit inspect <target>     Inspect a locked Skill or source
-skit doctor               Check lock, store, hashes, and declared requirements
+skit doctor               Check lock, store, hashes, and requirements
 skit init [name]          Create a SKILL.md template
 skit import-lock <kind>   Import a compatible lock file
 skit version              Print the CLI version
@@ -106,27 +106,66 @@ skit version              Print the CLI version
 Common flags:
 
 ```text
---project       Use project scope (default)
---global        Use global scope
---skill <name>  Select one Skill from a multi-Skill source
---all           Add every discovered non-internal Skill from a source
---full-depth    Search recursively for Skills when adding a source
---ignore-deps   Skip declared Skill dependencies
---json          Print JSON for supported commands
+--project          Use project scope (default)
+--global           Use global scope
+--skill <names...> Select one or more Skills from a single source
+--all              Install every discovered non-internal Skill from a source
+--full-depth       Search recursively for Skills when installing a source
+--ignore-deps      Skip declared Skill dependencies
+--no-active        Write store/lock only; do not create active symlinks
+--force            Replace an existing non-symlink active path
+--json             Print JSON for supported commands
 ```
 
-## Supported Sources
+`--skill` may be provided once. It can contain multiple space-separated Skill
+names for one source. For multiple sources, use inline selectors:
 
-`skit` currently fetches:
+```sh
+skit install owner/repo@skill-one other/repo@skill-two
+```
 
-- Local paths: `./skill`, `/absolute/path`
-- GitHub shorthand: `owner/repo`, `github:owner/repo`
-- GitHub subpaths: `owner/repo/path/to/skill`
-- GitHub tree URLs: `https://github.com/owner/repo/tree/ref/path`
-- GitLab shorthand: `gitlab:group/subgroup/repo`
-- GitLab tree URLs: `https://gitlab.com/group/repo/-/tree/ref/path`
-- SSH git URLs: `git@github.com:owner/repo.git`
-- Generic git URLs ending in `.git`
+## Paths
+
+Project scope:
+
+```text
+.agent/skills/<skill-name>  -> symlink to global store snapshot
+.agent/skills/skit.lock     deterministic project lock
+```
+
+Global scope:
+
+```text
+~/.agent/skills/<skill-name> -> symlink to global store snapshot
+~/.agent/skills/skit.lock    deterministic global lock
+```
+
+Store and temporary files:
+
+```text
+${XDG_DATA_HOME:-~/.local/share}/skit/store/<tree-hash>/<skill-name>/
+${XDG_CACHE_HOME:-~/.cache}/skit/tmp/
+```
+
+The store is shared across project and global scopes. Active Skills are symlinks
+to immutable store snapshots.
+
+## Sources
+
+Supported source forms include:
+
+```text
+./skill
+/absolute/path
+owner/repo
+github:owner/repo
+owner/repo/path/to/skill
+https://github.com/owner/repo/tree/ref/path
+gitlab:group/subgroup/repo
+https://gitlab.com/group/repo/-/tree/ref/path
+git@github.com:owner/repo.git
+https://example.com/owner/repo.git
+```
 
 Selectors:
 
@@ -136,66 +175,26 @@ source#ref@skill-name
 owner/repo@skill-name
 ```
 
-For non-ambiguous automation, prefer `--skill <name>` over inline `@skill`
-syntax.
+Use `--skill <name>` when a source locator or git ref contains `@` and would be
+ambiguous.
 
-Recognized but not fetched yet:
-
-- `registry:<slug>`
-- `clawhub:<slug>`
-- non-git HTTP(S) URLs as `well-known` sources
-
-These are parsed as future provider types so diagnostics are explicit instead
-of accidentally attempting to clone ordinary websites as git repositories.
-
-## Skill Discovery
+## Discovery
 
 Discovery is bounded and deterministic:
 
-- A source root containing `SKILL.md` is treated as one Skill.
-- Otherwise, `skit` checks direct children and common Skill roots such as
+- A source root containing `SKILL.md` is one Skill.
+- Direct children and common Skill roots are checked next, including
   `skills/`, `.agents/skills`, `.codex/skills`, `.claude/skills`,
   `.opencode/skills`, and `.windsurf/skills`.
-- If nothing is found, `skit` falls back to a depth-limited recursive search.
-- `--full-depth` forces depth-limited recursive discovery.
-- `metadata.internal: true` Skills are skipped by default and can be installed
-  explicitly with `--skill <name>`.
+- `--full-depth` enables depth-limited recursive discovery.
+- `metadata.internal: true` Skills are skipped unless selected explicitly with
+  `--skill`.
 
-`SKILL.md` is canonical. Lowercase `skill.md` is accepted for ecosystem
-compatibility and produces a warning.
-
-## Lock and Store
-
-Project scope uses:
-
-```text
-.skit/lock.json
-.skit/store/
-.skit/tmp/
-```
-
-Global scope uses XDG-style state/data directories.
-
-Lock entries record:
-
-- runtime Skill name and description
-- source type, locator, URL, ref, resolved ref, subpath, and selected Skill
-- content hashes for the full Skill tree and `SKILL.md`
-- resolved dependency edges
-- warnings relevant to the installed snapshot
-
-Store paths are content-addressed:
-
-```text
-.skit/store/<tree-hash>/<skill-name>/
-```
-
-`skit install` verifies existing store entries before reporting them restored.
-If store content differs from the lock, install fails with a hash mismatch.
+Lowercase `skill.md` is accepted for compatibility and recorded as a warning.
 
 ## Metadata
 
-`skit` reads standard `SKILL.md` frontmatter:
+`skit` reads standard frontmatter and `metadata.skit` extensions:
 
 ```yaml
 ---
@@ -203,7 +202,6 @@ name: pdf-tools
 description: Extract, merge, compress, and inspect PDF files.
 metadata:
   skit:
-    version: 1.2.0
     dependencies:
       - source: github:example/pdf-core
         ref: v1.2.0
@@ -216,57 +214,30 @@ metadata:
 ---
 ```
 
-It also understands the future `skill.yaml` carrier and compatibility metadata
-from current ClawHub/OpenClaw-style frontmatter. Compatibility install
-declarations are preserved for inspection and diagnosis; they are not executed.
+Compatibility metadata such as `metadata.openclaw.requires` is preserved for
+inspection and diagnostics. It is not executed.
 
-## Security Model
+## Safety
 
-`skit add` and `skit install` do not execute Skill code.
+`skit install`, `skit inspect`, `skit update`, and `skit doctor` do not execute
+Skill code.
 
-The CLI rejects unsafe source subpaths, rejects non-regular files during store
-copying, normalizes executable file modes, records immutable content hashes, and
-warns about suspicious script patterns such as piping network downloads into a
-shell.
-
-System requirements declared by Skills are checked by:
-
-```sh
-skit doctor
-```
-
-`doctor` reports missing binaries, environment variables, config files, platform
-mismatches, store hash mismatches, and stored warnings.
+The CLI rejects unsafe source subpaths, rejects non-regular files while copying
+snapshots, normalizes executable modes, verifies store hashes, and records
+warnings for suspicious content such as piping network downloads into a shell.
 
 ## Compatibility Imports
 
-Existing ecosystem locks can be imported:
+Existing ecosystem lock files can be imported:
 
 ```sh
 skit import-lock skills
 skit import-lock clawhub
 ```
 
-Lossy imports are marked `incomplete: true` because the original lock formats do
-not contain enough source and hash information for fully reproducible restore.
-Re-add the Skill with `skit add` to make it restorable.
-
-## Roadmap
-
-Near-term:
-
-- registry and well-known provider fetching
-- richer search providers beyond the current skills.sh-compatible API
-- `skit tidy` for unused lock/store/tmp entries
-- richer source and requirement diagnostics
-- optional agent activation/sync as a separate command, without changing the
-  lock file into agent state
-
-Deferred:
-
-- semver dependency solving and MVS-style selection
-- automatic system package installation
-- registry publishing and search
+Lossy imports are marked `incomplete: true` because the source lock may not
+contain enough information for reproducible restore. Reinstall the Skill with
+`skit install <source>` to make it fully restorable.
 
 ## Development
 

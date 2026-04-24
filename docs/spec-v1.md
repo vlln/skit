@@ -340,15 +340,11 @@ Local paths are resolved to absolute paths before lock writing.
 
 ## 7. Store And Lock
 
-skit does not record Agent targets in lock files.
+skit records reproducible source and content data in lock files. Active Agent
+directories are represented by symlinks next to the lock, not by copying Skill
+contents into agent-specific state.
 
 ### Store
-
-Project store:
-
-```text
-.skit/store/
-```
 
 Global store:
 
@@ -367,19 +363,19 @@ The store should be content-addressed when possible.
 v1 store layout:
 
 ```text
-.skit/store/<hashes.tree>/<skill-name>/
+$XDG_DATA_HOME/skit/store/<hashes.tree>/<skill-name>/
 ```
 
-Global store uses the same layout under `$XDG_DATA_HOME/skit/store/`.
+Project and global installs share the same global content-addressed store.
 
 Store write rules:
 
-- Fetch and validate into `.skit/tmp/<random>/` for project installs or an equivalent temporary directory beside the global store.
+- Fetch and validate into `$XDG_CACHE_HOME/skit/tmp/<random>/`, falling back to `~/.cache/skit/tmp/`.
 - Compute `hashes.tree` before moving into the final store path.
 - Atomically rename the validated Skill into the content-addressed path.
 - If the final path already exists with the same tree hash and Skill name, reuse it.
 - If the final path already exists but the content differs, fail instead of overwriting.
-- `skit remove` removes the lock entry by default. It may remove an unreferenced store directory only when this can be proven locally.
+- `skit remove` removes the lock entry and active symlink by default. It may remove an unreferenced store directory only when this can be proven locally.
 - Future `skit store prune` may remove unreferenced content-addressed directories; v1 does not require it.
 
 ### Canonical Tree Hash
@@ -423,7 +419,7 @@ File hash rules:
 Path:
 
 ```text
-.skit/lock.json
+.agent/skills/skit.lock
 ```
 
 Purpose:
@@ -432,6 +428,7 @@ Purpose:
 - Deterministic output.
 - No machine-specific timestamps.
 - Describes Skill source and content integrity only.
+- Tracks project active Skills.
 
 Schema:
 
@@ -528,13 +525,7 @@ Write rules:
 Path:
 
 ```text
-$XDG_STATE_HOME/skit/lock.json
-```
-
-Fallback:
-
-```text
-~/.local/state/skit/lock.json
+~/.agent/skills/skit.lock
 ```
 
 Purpose:
@@ -543,23 +534,35 @@ Purpose:
 - Same schema shape as project lock.
 - No install timestamps in v1.
 
+### Active Skills
+
+Project scope activates Skills under `.agent/skills/<skill-name>`.
+Global scope activates Skills under `~/.agent/skills/<skill-name>`.
+
+Active entries are symlinks to immutable global store snapshots. Existing
+symlinks may be replaced when the selected snapshot changes. Existing
+non-symlink paths are rejected unless `--force` is provided.
+
 ---
 
 ## 8. Commands
 
-### `skit add <source>`
+### `skit install [source...]`
 
-Installs a Skill into the project or global skit store.
+Installs Skills into the project or global active root. With no sources, it
+restores active symlinks from the relevant `skit.lock`.
 
 Options:
 
 - `--global`
 - `--project`
-- `--skill <name>`
+- `--skill <name...>`
 - `--all`
 - `--yes`
 - `--ignore-deps`
 - `--full-depth`
+- `--no-active`
+- `--force`
 
 Behavior:
 
@@ -574,10 +577,12 @@ Behavior:
 9. Atomically place the Skill under the content-addressed store path.
 10. Install dependencies unless ignored.
 11. Update project or global lock.
+12. Create or update active symlinks unless `--no-active` is set.
 
-`skit add --global` never modifies project `.skit/lock.json`.
+`skit install --global` never modifies project `.agent/skills/skit.lock`.
 
-`skit add` in v1 installs into the skit-managed store and writes the relevant lock file. It does not copy or symlink the Skill into Agent target directories. Successful output must make this explicit and should mention that Agent activation is deferred to future `skit sync` or manual copy/symlink.
+`skit install` writes the relevant lock file, stores immutable snapshots, and
+activates selected Skills via symlinks into the active root.
 
 Required dependency failures block installation. Optional dependency failures warn and continue.
 
@@ -585,10 +590,14 @@ Flag rules:
 
 - `--global` and `--project` are mutually exclusive.
 - `--all` and `--skill` are mutually exclusive.
+- `--skill` may be provided once and may contain multiple space-separated names for one source.
+- `--skill` requires exactly one source. Multiple sources should use inline selectors such as `owner/repo@skill-name`.
 - When a source contains multiple Skills and neither `--all` nor `--skill` is set, interactive mode prompts and non-interactive mode fails with a usage error.
 - `--yes` disables confirmation prompts but does not imply `--all`.
 - `--ignore-deps` skips dependency installation and records a warning in the result output; it must not create fake dependency lock entries.
 - `--full-depth` enables depth-limited recursive source discovery for compatibility with repositories that store Skills outside common priority paths.
+- `--no-active` writes store and lock only.
+- `--force` permits replacing an existing non-symlink active path.
 
 ### `skit search <query>`
 
@@ -604,15 +613,15 @@ Behavior:
 - Sends `GET /api/search?q=<query>&limit=<limit>` to the configured API.
 - Parses `skills[]` items with `id`, `name`, `source`, and `installs`.
 - Sorts results by install count descending.
-- Prints installable hints in the form `skit add <source> --skill <name>`.
+- Prints installable hints in the form `skit install <source>@<name>`.
 - Supports `--json`.
 - Does not install or mutate lock/store state.
 
-### `skit install`
+### `skit install` Restore Mode
 
-Restores project Skills from `.skit/lock.json`.
+With no source arguments, restores project Skills from `.agent/skills/skit.lock`.
 
-If `.skit/lock.json` is absent, skit may read compatible existing lock files and suggest `skit import-lock`.
+If `.agent/skills/skit.lock` is absent, skit may read compatible existing lock files and suggest `skit import-lock`.
 
 Entries with `incomplete: true` are not restored automatically. `skit install` must report them and suggest re-adding or inspecting the Skill.
 
@@ -661,7 +670,7 @@ v1 behavior:
 - Local sources are re-read, re-hashed, copied into the store, and written back to the lock.
 - Commit-pinned git sources do not change unless `--ref` is provided.
 - Branch refs update to latest commit.
-- Dependencies are refreshed using the same dependency rules as `skit add`; `--ignore-deps` skips dependency refresh and records a warning.
+- Dependencies are refreshed using the same dependency rules as `skit install`; `--ignore-deps` skips dependency refresh and records a warning.
 - Registry latest updates are future provider behavior. They are not required for the git/local v1 provider set.
 
 ### `skit doctor`
@@ -807,7 +816,7 @@ Install should warn on:
 
 ### Lock
 
-- Writes sorted `.skit/lock.json`.
+- Writes sorted `.agent/skills/skit.lock` for project scope.
 - Does not write timestamps into project lock.
 - Does not write Agent targets.
 - Records `source.skill` when a Skill selector is needed.
@@ -820,7 +829,7 @@ Install should warn on:
 
 ### Commands
 
-- `add` local Skill.
+- `install` local Skill.
 - `search` Skills.
 - `install` from lock.
 - `list` project/global.
@@ -863,7 +872,7 @@ Install should warn on:
 
 ### M5: Local Closed Loop
 
-- `skit add ./skill`.
+- `skit install ./skill`.
 - `skit list`.
 - `skit remove`.
 - `skit install`.
@@ -901,8 +910,8 @@ Install should warn on:
 - Required dependency failure blocks installation. Optional dependency failure warns and continues.
 - `metadata.clawhub` is not a v1 compatibility namespace.
 - v1 provider scope is `local`, `github`, `gitlab`, and generic `git`. Registry and well-known providers are recognized but remain future work.
-- `owner/repo@skill-name`, `github:owner/repo@skill-name`, and `source#ref@skill-name` are compatibility shortcuts; `--skill <name>` is the preferred non-ambiguous selector.
-- v1 does not activate Skills into Agent target directories after `add`; Agent sync is deferred.
-- v1 store paths use `.skit/store/<hashes.tree>/<skill-name>/`.
+- `owner/repo@skill-name`, `github:owner/repo@skill-name`, and `source#ref@skill-name` are compatibility shortcuts; `--skill <name...>` is the preferred non-ambiguous selector for one source.
+- v1 activates Skills via `.agent/skills` symlinks to immutable global store snapshots.
+- v1 store paths use `$XDG_DATA_HOME/skit/store/<hashes.tree>/<skill-name>/`.
 - v1 rejects same-name different-origin lock conflicts.
 - v1 Skill discovery scans source root, direct children, common Skill roots, and falls back to depth-limited recursive discovery when needed. `--full-depth` forces recursive discovery.

@@ -27,8 +27,6 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "version", "--version", "-v":
 		fmt.Fprintf(stdout, "skit %s\n", version)
 		return 0
-	case "add":
-		return runAdd(args[1:], stdout, stderr)
 	case "search", "find":
 		return runSearch(args[1:], stdout, stderr)
 	case "install":
@@ -61,9 +59,8 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "  skit <command> [flags]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
-	fmt.Fprintln(w, "  add        Add a local Skill to the skit store")
 	fmt.Fprintln(w, "  search     Search for Skills")
-	fmt.Fprintln(w, "  install    Restore Skills from lock")
+	fmt.Fprintln(w, "  install    Install sources or restore from lock")
 	fmt.Fprintln(w, "  list       List locked Skills")
 	fmt.Fprintln(w, "  remove     Remove a Skill from lock")
 	fmt.Fprintln(w, "  update     Refresh locked Skills from their sources")
@@ -75,7 +72,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "  version    Show version")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Common flags:")
-	fmt.Fprintln(w, "  --full-depth  Search recursively for Skills when adding a source")
+	fmt.Fprintln(w, "  --full-depth  Search recursively for Skills when installing a source")
 }
 
 func runSearch(args []string, stdout, stderr io.Writer) int {
@@ -84,7 +81,7 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit search:", err)
 		return 2
 	}
-	if opts.scope == app.Global || opts.skill != "" || opts.all || opts.ignoreDeps || opts.fullDepth {
+	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth {
 		fmt.Fprintln(stderr, "skit search: --global, --skill, --all, --ignore-deps, and --full-depth are not supported")
 		return 2
 	}
@@ -105,7 +102,7 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "no skills found for %q\n", query)
 		return 0
 	}
-	fmt.Fprintln(stdout, "Install with: skit add <source> --skill <name>")
+	fmt.Fprintln(stdout, "Install with: skit install <source@skill>")
 	fmt.Fprintln(stdout)
 	for _, result := range results {
 		source := result.Source
@@ -118,7 +115,7 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout)
 		if source != "" && result.Name != "" {
-			fmt.Fprintf(stdout, "  skit add %s --skill %s\n", source, result.Name)
+			fmt.Fprintf(stdout, "  skit install %s@%s\n", source, result.Name)
 		}
 	}
 	return 0
@@ -141,29 +138,41 @@ func trimFloat(v float64) float64 {
 	return float64(int(v*10)) / 10
 }
 
-func runAdd(args []string, stdout, stderr io.Writer) int {
+func runInstallSource(args []string, stdout, stderr io.Writer) int {
 	opts, rest, err := parseCommon(args)
 	if err != nil {
-		fmt.Fprintln(stderr, "skit add:", err)
+		fmt.Fprintln(stderr, "skit install:", err)
 		return 2
 	}
-	if len(rest) != 1 {
-		fmt.Fprintln(stderr, "skit add: expected exactly one source")
+	if len(rest) == 0 {
+		return runRestore(opts, stdout, stderr)
+	}
+	if len(rest) > 1 && len(opts.skills) > 0 {
+		fmt.Fprintln(stderr, "skit install: --skill can only be used with one source; use source@skill for multiple sources")
 		return 2
 	}
-	result, err := app.Add(app.AddRequest{
-		CWD:        cwd(),
-		Scope:      opts.scope,
-		Source:     rest[0],
-		Skill:      opts.skill,
-		All:        opts.all,
-		IgnoreDeps: opts.ignoreDeps,
-		FullDepth:  opts.fullDepth,
-	})
-	if err != nil {
-		fmt.Fprintln(stderr, "skit add:", err)
-		return 1
+	for _, src := range rest {
+		result, err := app.Add(app.AddRequest{
+			CWD:        cwd(),
+			Scope:      opts.scope,
+			Source:     src,
+			Skills:     opts.skills,
+			All:        opts.all,
+			IgnoreDeps: opts.ignoreDeps,
+			FullDepth:  opts.fullDepth,
+			NoActive:   opts.noActive,
+			Force:      opts.force,
+		})
+		if err != nil {
+			fmt.Fprintln(stderr, "skit install:", err)
+			return 1
+		}
+		printAddResult(stdout, stderr, result)
 	}
+	return 0
+}
+
+func printAddResult(stdout, stderr io.Writer, result app.AddResult) {
 	for i, entry := range result.DependencyEntries {
 		fmt.Fprintf(stdout, "added dependency %s %s\n", entry.Name, entry.Hashes.Tree)
 		if i < len(result.DependencyStorePaths) {
@@ -179,18 +188,18 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 	for _, warning := range result.Warnings {
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}
-	fmt.Fprintln(stdout, "note: v1 stores and locks Skills only; Agent target sync is deferred")
-	return 0
+	for _, path := range result.ActivePaths {
+		fmt.Fprintf(stdout, "active %s\n", path)
+	}
 }
 
 func runInstall(args []string, stdout, stderr io.Writer) int {
-	opts, rest, err := parseCommon(args)
-	if err != nil {
-		fmt.Fprintln(stderr, "skit install:", err)
-		return 2
-	}
-	if len(rest) != 0 {
-		fmt.Fprintln(stderr, "skit install: unexpected arguments")
+	return runInstallSource(args, stdout, stderr)
+}
+
+func runRestore(opts commonOptions, stdout, stderr io.Writer) int {
+	if opts.all || len(opts.skills) > 0 || opts.ignoreDeps || opts.fullDepth || opts.noActive || opts.force {
+		fmt.Fprintln(stderr, "skit install: flags require at least one source")
 		return 2
 	}
 	result, err := app.Install(app.InstallRequest{CWD: cwd(), Scope: opts.scope})
@@ -200,6 +209,9 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 	for _, entry := range result.Restored {
 		fmt.Fprintf(stdout, "restored %s %s\n", entry.Name, entry.Hashes.Tree)
+	}
+	for _, path := range result.ActivePaths {
+		fmt.Fprintf(stdout, "active %s\n", path)
 	}
 	for _, entry := range result.Skipped {
 		fmt.Fprintf(stderr, "skipped incomplete entry %s\n", entry.Name)
@@ -311,7 +323,15 @@ func runInspect(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit inspect: expected exactly one skill name or source")
 		return 2
 	}
-	result, err := app.Inspect(app.InspectRequest{CWD: cwd(), Scope: opts.scope, Target: rest[0], Skill: opts.skill})
+	if len(opts.skills) > 1 {
+		fmt.Fprintln(stderr, "skit inspect: expected at most one --skill value")
+		return 2
+	}
+	skillName := ""
+	if len(opts.skills) == 1 {
+		skillName = opts.skills[0]
+	}
+	result, err := app.Inspect(app.InspectRequest{CWD: cwd(), Scope: opts.scope, Target: rest[0], Skill: skillName})
 	if err != nil {
 		fmt.Fprintln(stderr, "skit inspect:", err)
 		return 1
@@ -398,7 +418,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit init:", err)
 		return 2
 	}
-	if opts.scope == app.Global || opts.skill != "" || opts.all {
+	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all {
 		fmt.Fprintln(stderr, "skit init: --global, --skill, and --all are not supported")
 		return 2
 	}
@@ -518,11 +538,13 @@ func printDependencies(w io.Writer, deps []lockfile.Dependency) {
 
 type commonOptions struct {
 	scope      app.Scope
-	skill      string
+	skills     []string
 	all        bool
 	json       bool
 	ignoreDeps bool
 	fullDepth  bool
+	noActive   bool
+	force      bool
 }
 
 func parseCommon(args []string) (commonOptions, []string, error) {
@@ -542,7 +564,7 @@ func parseCommon(args []string) (commonOptions, []string, error) {
 			}
 			opts.scope = app.Global
 		case "--all":
-			if opts.skill != "" {
+			if len(opts.skills) > 0 {
 				return opts, nil, fmt.Errorf("--all and --skill are mutually exclusive")
 			}
 			opts.all = true
@@ -550,11 +572,23 @@ func parseCommon(args []string) (commonOptions, []string, error) {
 			if opts.all {
 				return opts, nil, fmt.Errorf("--all and --skill are mutually exclusive")
 			}
+			if len(opts.skills) > 0 {
+				return opts, nil, fmt.Errorf("--skill may only be provided once")
+			}
 			i++
 			if i >= len(args) {
 				return opts, nil, fmt.Errorf("%s requires a value", arg)
 			}
-			opts.skill = args[i]
+			for ; i < len(args); i++ {
+				if strings.HasPrefix(args[i], "-") {
+					i--
+					break
+				}
+				opts.skills = append(opts.skills, args[i])
+			}
+			if len(opts.skills) == 0 {
+				return opts, nil, fmt.Errorf("%s requires a value", arg)
+			}
 		case "-y", "--yes":
 		case "--json":
 			opts.json = true
@@ -562,6 +596,10 @@ func parseCommon(args []string) (commonOptions, []string, error) {
 			opts.ignoreDeps = true
 		case "--full-depth":
 			opts.fullDepth = true
+		case "--no-active":
+			opts.noActive = true
+		case "--force":
+			opts.force = true
 		default:
 			if len(arg) > 0 && arg[0] == '-' {
 				return opts, nil, fmt.Errorf("unknown flag %s", arg)

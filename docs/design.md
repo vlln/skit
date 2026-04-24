@@ -82,7 +82,7 @@ Go 拉取依赖后只做完整性校验，不执行任何代码。
 Go 的 `go.sum` 记录所有直接和间接依赖的哈希，任何篡改都会被检测到。
 
 **skit 设计**：
-- `.skit/lock.json` 记录完整递归依赖树中每个 Skill 的精确版本、提交哈希和校验和。
+- `.agent/skills/skit.lock` 记录完整递归依赖树中每个 Skill 的精确版本、提交哈希和校验和。
 - 格式采用 JSON，便于 CLI 稳定读写、测试和跨语言工具消费。
 
 ### 2.5 go mod tidy 自动清理——`skit doctor` 诊断完整性
@@ -106,7 +106,7 @@ Go 提供 `go mod tidy` 清理无用依赖。
 | `SKILL.md` 中的 `metadata.skit` | skit 扩展协议：版本、依赖、系统依赖、平台、关键字等 | skit CLI、注册中心 | `install` / `publish` / `search` |
 | `skill.yaml` | 可选未来标准 manifest，内容协议等同于 `metadata.skit` | skit CLI、注册中心 | `install` / `publish` / `search` |
 | `SKILL.md` | 运行时指令：任务目标、步骤、规范、约束 | Agent（模型） | Agent 激活 Skill 时注入上下文 |
-| `.skit/lock.json` | 递归依赖树的精确版本锁定 | skit CLI | `install` / `update` 时自动生成 |
+| `.agent/skills/skit.lock` | 递归依赖树的精确版本锁定 | skit CLI | `install` / `update` 时自动生成 |
 
 ### 3.2 `metadata.skit` 规范 Schema
 
@@ -332,9 +332,9 @@ skit 不应直接复用其中任一格式作为唯一格式。原因：
 
 skit v1 采用内容锁文件；本机安装状态推迟到后续版本：
 
-- **项目可提交 lock**：`.skit/lock.json`，不写入本机时间戳，字段排序稳定，目标是可复现和低冲突。
-- **全局 lock**：`$XDG_STATE_HOME/skit/lock.json`，缺省回退到 `~/.local/state/skit/lock.json`，schema 与项目 lock 相同，用于记录全局 store 中的 Skill。
-- **本机安装 state**：v1 暂缓。后续如支持 Agent target 同步，再引入 state 记录安装时间、目标 Agent、实际路径、copy/symlink 模式和交互偏好。
+- **项目 lock**：`.agent/skills/skit.lock`，与项目 active root 放在一起，不写入本机时间戳，字段排序稳定，目标是可复现和低冲突。
+- **全局 lock**：`~/.agent/skills/skit.lock`，schema 与项目 lock 相同，用于记录全局激活的 Skill。
+- **本机安装 state**：v1 不单独引入。active 目录中的 Skill 均为指向全局 store 的软链接。
 
 ### 5.5.2 项目 lock schema 草案
 
@@ -418,10 +418,10 @@ skit v1 采用内容锁文件；本机安装状态推迟到后续版本：
 
 skit 应提供读取兼容，不默认双写其他工具的 lock：
 
-- 若当前目录无 `.skit/lock.json`，但存在 `skills-lock.json`，`skit install` 可读取并恢复。
-- 若当前目录无 `.skit/lock.json`，但存在 `.clawhub/lock.json`，`skit install` 可按 registry slug/version 恢复。
-- `skit import-lock skills` 将 `skills-lock.json` 转为 `.skit/lock.json`。
-- `skit import-lock clawhub` 将 `.clawhub/lock.json` 和 `.clawhub/origin.json` 转为 `.skit/lock.json`。
+- 若当前目录无 `.agent/skills/skit.lock`，但存在 `skills-lock.json`，`skit install` 可读取并恢复。
+- 若当前目录无 `.agent/skills/skit.lock`，但存在 `.clawhub/lock.json`，`skit install` 可按 registry slug/version 恢复。
+- `skit import-lock skills` 将 `skills-lock.json` 转为 `.agent/skills/skit.lock`。
+- `skit import-lock clawhub` 将 `.clawhub/lock.json` 和 `.clawhub/origin.json` 转为 `.agent/skills/skit.lock`。
 - `skit export-lock skills` / `skit export-lock clawhub` 可作为后续显式兼容命令，但普通安装不默认写入其他工具的 lock，避免多工具互相覆盖。
 - 兼容导入若无法还原 source/hash，必须生成 `incomplete: true` 条目并报告丢失字段。
 
@@ -473,8 +473,7 @@ v1 推荐命令语义：
 
 | 命令 | 功能 |
 |:---|:---|
-| `skit add <source>` | 从 source 安装 Skill，兼容 `skills add` 语义 |
-| `skit install` | 根据 lockfile 恢复项目 Skill |
+| `skit install [source...]` | 从 source 安装 Skill；无 source 时根据 lockfile 恢复 active symlink |
 | `skit list` / `skit ls` | 列出已安装 Skill |
 | `skit remove <name>` / `skit rm` | 删除已安装 Skill |
 | `skit update [name]` | 更新 Skill 并刷新 lockfile |
@@ -485,11 +484,8 @@ v1 推荐命令语义：
 | `skit search <query>` / `skit find` | 后置版本：搜索 registry 或本地缓存 |
 | `skit source <add/list/remove>` | 后置版本：管理 registry/source 配置 |
 
-CLI 兼容别名：
-
-- `skit add` 对齐 `npx skills add`。
-- `skit install` 更偏 lockfile restore。
 - v1 优先兼容 `--global`、`--project`、`--skill`、`--yes`、`--all`。
+- `--skill` 只允许出现一次，但可跟多个用空格分隔的 skill name；只适用于单个 source。多个 source 使用 `owner/repo@skill` 这类 inline selector。
 - `--agent`、`--copy` 与 `skit sync` 归入后续 Agent target 同步能力。
 - `--global` 与 `--project` 互斥；`--all` 与 `--skill` 互斥；`--yes` 只跳过确认，不隐含选择全部 Skill。
 
@@ -497,16 +493,16 @@ CLI 兼容别名：
 
 ## 6.1 安装目录模型
 
-skit v1 只维护 canonical store 和 lockfile。Agent target 是后续同步能力，不进入 v1 最小实现。
+skit v1 维护全局 canonical store、lockfile 和 active symlink。默认 project active root 为 `.agent/skills`，global active root 为 `~/.agent/skills`。
 
 Canonical store：
 
-- project store：`.skit/store/`
+- project 不单独维护 store
 - global store：`$XDG_DATA_HOME/skit/store/`，缺省 `~/.local/share/skit/store/`
 - v1 store layout 固定为 `<store>/<hashes.tree>/<skill-name>/`，其中 `hashes.tree` 已包含 `sha256-` 前缀。
 - 安装写入必须先进入临时目录，完成校验与 hash 后再原子移动到 content-addressed store；失败安装不得留下半成品最终目录。
-- `skit remove` 默认移除 lock entry；只有能确认 store 内容未被任何 lock 引用时才可清理目录。更完整的清理留给后续 `skit store prune`。
-- v1 `skit add` 只维护 canonical store 和 lockfile，不把 Skill 复制或链接到 Agent target。成功输出必须提示 Agent 激活/同步属于后续能力或手动步骤。
+- `skit install` 默认在 active root 创建指向 store snapshot 的软链接；`--no-active` 可仅写 store/lock。
+- `skit remove` 默认移除 lock entry 和 active symlink；只有能确认 store 内容未被任何 lock 引用时才可清理目录。更完整的清理留给后续 `skit store prune`。
 
 后续 Agent target 是实际被 Agent 发现的目录，例如：
 

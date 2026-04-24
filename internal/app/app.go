@@ -35,9 +35,12 @@ type AddRequest struct {
 	Scope      Scope
 	Source     string
 	Skill      string
+	Skills     []string
 	All        bool
 	IgnoreDeps bool
 	FullDepth  bool
+	NoActive   bool
+	Force      bool
 }
 
 type SearchRequest struct {
@@ -59,6 +62,7 @@ type AddResult struct {
 	DependencyEntries    []lockfile.Entry `json:"dependencyEntries,omitempty"`
 	DependencyStorePaths []string         `json:"dependencyStorePaths,omitempty"`
 	Warnings             []string         `json:"warnings,omitempty"`
+	ActivePaths          []string         `json:"activePaths,omitempty"`
 }
 
 func Add(req AddRequest) (AddResult, error) {
@@ -68,6 +72,16 @@ func Add(req AddRequest) (AddResult, error) {
 	src, err := source.Parse(req.Source, source.WithSkill(req.Skill))
 	if err != nil {
 		return result, err
+	}
+	wanted := req.Skills
+	if req.Skill != "" {
+		wanted = append([]string{req.Skill}, wanted...)
+	}
+	if src.Skill != "" && len(wanted) > 0 {
+		src.Warnings = append(src.Warnings, "inline skill selector ignored because --skill was provided")
+	}
+	if src.Skill != "" && len(wanted) == 0 {
+		wanted = []string{src.Skill}
 	}
 	workRoot := src.Locator
 	cleanup := func() {}
@@ -86,7 +100,7 @@ func Add(req AddRequest) (AddResult, error) {
 		cleanup = func() { _ = gitfetch.RemoveUnder(clone.Dir, paths.Tmp) }
 		defer cleanup()
 	} else if src.Type != source.Local {
-		return result, fmt.Errorf("provider %q is not implemented for add yet", src.Type)
+		return result, fmt.Errorf("provider %q is not implemented for install yet", src.Type)
 	}
 
 	discoverRoot := workRoot
@@ -94,14 +108,14 @@ func Add(req AddRequest) (AddResult, error) {
 		discoverRoot = filepath.Join(workRoot, filepath.FromSlash(src.Subpath))
 	}
 	discoverOpts := parseOptionsForSource(src)
-	discoverOpts.IncludeInternal = req.Skill != ""
+	discoverOpts.IncludeInternal = len(wanted) > 0
 	discoverOpts.FullDepth = req.FullDepth
 	discovered, warnings, err := skill.DiscoverWithOptions(discoverRoot, discoverOpts)
 	if err != nil {
 		return result, err
 	}
 	result.Warnings = append(result.Warnings, warnings...)
-	selected, err := selectSkills(discovered, src.Skill, req.All)
+	selected, err := selectSkills(discovered, wanted, req.All)
 	if err != nil {
 		if len(result.Warnings) > 0 {
 			return result, fmt.Errorf("%w; %s", err, strings.Join(result.Warnings, "; "))
@@ -119,6 +133,8 @@ func Add(req AddRequest) (AddResult, error) {
 		lock:       lock,
 		result:     &result,
 		ignoreDeps: req.IgnoreDeps,
+		noActive:   req.NoActive,
+		force:      req.Force,
 		visiting:   map[string]bool{},
 	}
 	for _, parsed := range selected {
@@ -141,6 +157,8 @@ type addSession struct {
 	lock       lockfile.Lock
 	result     *AddResult
 	ignoreDeps bool
+	noActive   bool
+	force      bool
 	replace    bool
 	visiting   map[string]bool
 }
@@ -191,6 +209,13 @@ func (s *addSession) installParsed(src source.Source, parsed skill.Skill, workRo
 		if err != nil {
 			return lockfile.Entry{}, "", err
 		}
+	}
+	if !s.noActive {
+		activePath, err := activate(s.paths, entry, installed.Path, s.force)
+		if err != nil {
+			return lockfile.Entry{}, "", err
+		}
+		s.result.ActivePaths = append(s.result.ActivePaths, activePath)
 	}
 	s.result.Warnings = appendUnique(s.result.Warnings, src.Warnings...)
 	s.result.Warnings = appendUnique(s.result.Warnings, safetyWarnings...)
@@ -385,10 +410,12 @@ func Remove(req RemoveRequest) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	entry := lock.Skills[req.Name]
 	next, removed := lockfile.Remove(lock, req.Name)
 	if !removed {
 		return false, nil
 	}
+	_ = os.Remove(activePath(paths, entry))
 	return true, lockfile.Write(paths.Lock, next)
 }
 
@@ -398,8 +425,9 @@ type InstallRequest struct {
 }
 
 type InstallResult struct {
-	Restored []lockfile.Entry
-	Skipped  []lockfile.Entry
+	Restored    []lockfile.Entry
+	Skipped     []lockfile.Entry
+	ActivePaths []string
 }
 
 func Install(req InstallRequest) (InstallResult, error) {
@@ -419,6 +447,11 @@ func Install(req InstallRequest) (InstallResult, error) {
 			if err := verifyStoreEntry(paths, entry); err != nil {
 				return result, err
 			}
+			activePath, err := activate(paths, entry, storePath(paths, entry), true)
+			if err != nil {
+				return result, err
+			}
+			result.ActivePaths = append(result.ActivePaths, activePath)
 			result.Restored = append(result.Restored, entry)
 			continue
 		}
@@ -453,6 +486,11 @@ func Install(req InstallRequest) (InstallResult, error) {
 		if installed.Hashes.Tree != entry.Hashes.Tree || installed.Hashes.SkillMD != entry.Hashes.SkillMD {
 			return result, fmt.Errorf("hash mismatch restoring %q", entry.Name)
 		}
+		activePath, err := activate(paths, entry, installed.Path, true)
+		if err != nil {
+			return result, err
+		}
+		result.ActivePaths = append(result.ActivePaths, activePath)
 		result.Restored = append(result.Restored, entry)
 	}
 	return result, nil
@@ -849,20 +887,27 @@ func readClawHubOrigin(cwd, slug string) *clawHubOrigin {
 	return nil
 }
 
-func selectSkills(skills []skill.Skill, wanted string, all bool) ([]skill.Skill, error) {
+func selectSkills(skills []skill.Skill, wanted []string, all bool) ([]skill.Skill, error) {
 	if all {
 		if len(skills) == 0 {
 			return nil, fmt.Errorf("no skills found")
 		}
 		return skills, nil
 	}
-	if wanted != "" {
+	if len(wanted) > 0 {
+		byName := map[string]skill.Skill{}
 		for _, s := range skills {
-			if s.Name == wanted {
-				return []skill.Skill{s}, nil
-			}
+			byName[s.Name] = s
 		}
-		return nil, fmt.Errorf("skill %q not found", wanted)
+		var selected []skill.Skill
+		for _, name := range wanted {
+			s, ok := byName[name]
+			if !ok {
+				return nil, fmt.Errorf("skill %q not found", name)
+			}
+			selected = append(selected, s)
+		}
+		return selected, nil
 	}
 	if len(skills) == 1 {
 		return skills, nil
@@ -870,7 +915,7 @@ func selectSkills(skills []skill.Skill, wanted string, all bool) ([]skill.Skill,
 	if len(skills) == 0 {
 		return nil, fmt.Errorf("no skills found")
 	}
-	return nil, fmt.Errorf("source contains multiple skills; pass --skill <name> or --all")
+	return nil, fmt.Errorf("source contains multiple skills; use source@skill, --skill <name...>, or --all")
 }
 
 func resolveOne(ctx context.Context, paths store.Paths, src source.Source) (skill.Skill, source.Source, func(), error) {
@@ -906,7 +951,11 @@ func resolveOneForInstall(ctx context.Context, paths store.Paths, src source.Sou
 		cleanup()
 		return skill.Skill{}, src, workRoot, resolvedRef, func() {}, err
 	}
-	selected, err := selectSkills(discovered, src.Skill, false)
+	var wanted []string
+	if src.Skill != "" {
+		wanted = []string{src.Skill}
+	}
+	selected, err := selectSkills(discovered, wanted, false)
 	if err != nil {
 		cleanup()
 		return skill.Skill{}, src, workRoot, resolvedRef, func() {}, err
@@ -1003,6 +1052,61 @@ func cleanCWD(cwd string) string {
 
 func storePath(paths store.Paths, entry lockfile.Entry) string {
 	return filepath.Join(paths.Root, entry.Hashes.Tree, entry.Name)
+}
+
+func activePath(paths store.Paths, entry lockfile.Entry) string {
+	return filepath.Join(paths.Active, entry.Name)
+}
+
+func activate(paths store.Paths, entry lockfile.Entry, target string, force bool) (string, error) {
+	path := activePath(paths, entry)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return "", err
+	}
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			current, err := os.Readlink(path)
+			if err != nil {
+				return "", err
+			}
+			resolved := current
+			if !filepath.IsAbs(resolved) {
+				resolved = filepath.Join(filepath.Dir(path), current)
+			}
+			if samePath(resolved, target) {
+				return path, nil
+			}
+			if err := os.Remove(path); err != nil {
+				return "", err
+			}
+		} else {
+			if !force {
+				return "", fmt.Errorf("active path exists and is not a skit symlink: %s", path)
+			}
+			if err := os.RemoveAll(path); err != nil {
+				return "", err
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	rel, err := filepath.Rel(filepath.Dir(path), target)
+	if err != nil {
+		rel = target
+	}
+	if err := os.Symlink(rel, path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func samePath(a, b string) bool {
+	aa, errA := filepath.Abs(a)
+	bb, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return a == b
+	}
+	return aa == bb
 }
 
 func verifyStoreEntry(paths store.Paths, entry lockfile.Entry) error {

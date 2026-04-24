@@ -21,24 +21,39 @@ const (
 )
 
 type Paths struct {
-	Root string
-	Lock string
-	Tmp  string
+	Root   string
+	Lock   string
+	Tmp    string
+	Active string
 }
 
 func PathsFor(scope Scope, cwd string) Paths {
+	storeRoot := filepath.Join(xdg.DataHome(), "skit", "store")
+	tmpRoot := filepath.Join(xdg.CacheHome(), "skit", "tmp")
 	if scope == Global {
+		active := filepath.Join(userHome(), ".agent", "skills")
 		return Paths{
-			Root: filepath.Join(xdg.DataHome(), "skit", "store"),
-			Lock: filepath.Join(xdg.StateHome(), "skit", "lock.json"),
-			Tmp:  filepath.Join(xdg.DataHome(), "skit", "tmp"),
+			Root:   storeRoot,
+			Lock:   filepath.Join(active, "skit.lock"),
+			Tmp:    tmpRoot,
+			Active: active,
 		}
 	}
+	active := filepath.Join(cwd, ".agent", "skills")
 	return Paths{
-		Root: filepath.Join(cwd, ".skit", "store"),
-		Lock: filepath.Join(cwd, ".skit", "lock.json"),
-		Tmp:  filepath.Join(cwd, ".skit", "tmp"),
+		Root:   storeRoot,
+		Lock:   filepath.Join(active, "skit.lock"),
+		Tmp:    tmpRoot,
+		Active: active,
 	}
+}
+
+func userHome() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "."
+	}
+	return home
 }
 
 type InstallResult struct {
