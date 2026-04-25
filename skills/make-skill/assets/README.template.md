@@ -17,7 +17,7 @@ used by skills-compatible agents.
 Paste this into your AI agent (Claude Code, Cursor, OpenAI Assistants, etc.):
 
 ```text
-Install the Agent Skills from https://github.com/<owner>/<repo> with skit. If skit is not installed, install it from https://github.com/vlln/skit first. Then install all skills globally.
+Install the Agent Skills from https://raw.githubusercontent.com/<owner>/<repo>/main/README.md
 ```
 
 ## Installation

@@ -149,9 +149,12 @@ scripts are invoked, or detailed implementation rules. Put that operational
 guidance in the relevant `SKILL.md`.
 
 Include the template's Quick Start section as an agent-friendly copy/paste
-prompt for users. Keep it generic, using the published GitHub repository URL and
-the `https://github.com/vlln/skit` link; do not mention local checkout paths or
-skill internals there.
+prompt for users. Keep it generic and point to the published raw GitHub
+`README.md`, such as
+`https://raw.githubusercontent.com/<owner>/<repo>/main/README.md`. Do not add
+extra skit installation text there because the README itself contains the
+installation instructions. Do not mention local checkout paths or skill
+internals there.
 
 In the Installation section, start from the template's `skit` block and preserve
 the exact skit project link `https://github.com/vlln/skit`. Do not infer or
