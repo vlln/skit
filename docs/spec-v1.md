@@ -2,9 +2,9 @@
 
 > **Status**: Draft
 > **Date**: 2026-04-24
-> **Scope**: Skill metadata, source resolution, store, lock, compatibility imports, CLI behavior
+> **Scope**: Skill metadata, source resolution, store, lock, ecosystem imports, CLI behavior
 
-This document turns `design.md` into implementation-oriented contracts. v1 keeps skit focused on Skill management only: parse, fetch, validate, store, lock, diagnose.
+This document turns `design.md` into implementation-oriented contracts. v1 keeps skit focused on Skill management: parse, fetch, validate, store, lock, activate, and diagnose.
 
 ---
 
@@ -14,26 +14,26 @@ This document turns `design.md` into implementation-oriented contracts. v1 keeps
 
 - Parse and validate standard `SKILL.md`.
 - Read skit metadata from `metadata.skit`.
-- Keep the metadata protocol compatible with a future `skill.yaml` standard.
+- Keep the metadata protocol aligned with a possible `skill.yaml` standard.
 - Resolve local and GitHub sources into stable content identities.
 - Resolve GitHub, GitLab, and generic git sources into stable content identities.
 - Store fetched Skills in a skit-managed store.
 - Write reproducible project/global lock files.
 - Diagnose metadata, source, lock, hash, and environment issues.
 - Import existing `skills` and `clawhub` lock data where practical.
-- Preserve compatibility with current `skills` and ClawHub frontmatter conventions without adopting their full runtime installation models.
+- Read current `skills` and ClawHub/OpenClaw frontmatter conventions for diagnostics without adopting their runtime installation models.
 
 ### Non-goals
 
-- Manage Agent target directories.
-- Record Agent names, target paths, copy/symlink mode, or sync state in lock files.
+- Manage multiple Agent-specific target directories.
+- Record Agent names, target paths, copy mode, or sync state in lock files.
 - Record install timestamps in lock files.
 - Automatically install system packages.
 - Execute Skill scripts during install.
 - Implement MVS or semver dependency solving.
 - Export lock files back into `skills` or `clawhub` formats.
 - Require `metadata.skit` or `skill.yaml` for existing Skills.
-- Activate Skills into Agent target directories. v1 records and stores Skills only; it does not make Codex, Claude Code, or other agents discover them automatically.
+- Copy Skills into Codex, Claude Code, or other Agent-specific directories.
 
 ---
 
@@ -43,10 +43,10 @@ A Skill is a directory containing `SKILL.md`.
 
 `SKILL.md` must contain YAML frontmatter followed by Markdown instructions.
 
-Compatibility rule:
+Marker rule:
 
 - `SKILL.md` is the canonical filename.
-- `skill.md` is accepted for ecosystem compatibility, but skit must emit a warning.
+- `skill.md` is accepted for ecosystem interoperability, but skit must emit a warning.
 - If both `SKILL.md` and `skill.md` exist in the same Skill directory, skit uses `SKILL.md` and warns that `skill.md` was ignored.
 
 Required fields:
@@ -70,7 +70,7 @@ Rules:
 - `name` must not start or end with a hyphen.
 - `name` must not contain consecutive hyphens.
 - `name` is the runtime Skill identity.
-- If `name` differs from the Skill root directory basename after source resolution, skit accepts the Skill and emits a warning. This matches common ecosystem practice in `skills` and `clawhub`, where metadata identity and source path are not strictly coupled.
+- If `name` differs from the Skill root directory basename after source resolution, skit accepts the Skill and emits a warning. This matches common ecosystem practice where metadata identity and source path are not strictly coupled.
 - `description` must be 1-1024 characters.
 - `compatibility`, when present, must be 1-500 characters.
 - `metadata`, when present, must be a YAML mapping.
@@ -161,15 +161,15 @@ Fields:
 
 ---
 
-## 4. Ecosystem Compatibility Metadata
+## 4. Ecosystem Metadata
 
 Existing ecosystem tools use `SKILL.md` frontmatter differently:
 
 - `skills` reads the standard frontmatter and exposes `metadata` as an arbitrary mapping. It uses `metadata.internal: true` as a discovery/install filter, but it does not define a package-management schema under `metadata.skills`.
 - ClawHub stores registry/runtime declarations as incremental metadata, not as a copy of the full YAML frontmatter. Its preferred namespace is `metadata.clawdbot`; `metadata.clawdis` and `metadata.openclaw` are accepted aliases. Some legacy skills also use top-level `clawdis` or top-level runtime fields such as `requires`, `primaryEnv`, `homepage`, `env`, `dependencies`, `author`, and `links`.
-- `metadata.clawhub` is not a current compatibility namespace. v1 must not special-case it unless a future ClawHub spec introduces it.
+- `metadata.clawhub` is not a current ClawHub/OpenClaw namespace. v1 must not special-case it unless an upstream spec introduces it.
 
-skit v1 reads compatibility metadata only for diagnosis, inspection, and conservative install planning. It must not execute install declarations from compatibility metadata.
+skit v1 reads ecosystem metadata only for diagnosis, inspection, and conservative install planning. It must not execute install declarations from ecosystem metadata.
 
 ### ClawHub / OpenClaw Mapping
 
@@ -181,23 +181,23 @@ Source priority:
 4. top-level `clawdis`
 5. top-level fallback fields listed below
 
-If multiple compatibility blocks are present, the first non-empty block by priority wins. skit may warn about lower-priority blocks being ignored.
+If multiple ecosystem blocks are present, the first non-empty block by priority wins. skit may warn about lower-priority blocks being ignored.
 
 Normalized fields:
 
 - `requires.bins`, `requires.anyBins`, `requires.env`, `requires.config` map to skit `requires`.
-- `primaryEnv` is preserved for `inspect` output and doctor messaging. It may also be treated as an expected env var if not already listed under `requires.env`, but this should be reported as compatibility-derived.
-- `os` maps to skit `platforms.os`. Values are normalized as: `macos` -> `darwin`, `linux` -> `linux`, `windows`/`win32` -> `windows`. Unknown values are preserved in compatibility metadata and reported as warnings, not hard validation failures.
+- `primaryEnv` is preserved for `inspect` output and doctor messaging. It may also be treated as an expected env var if not already listed under `requires.env`, with provenance recorded.
+- `os` maps to skit `platforms.os`. Values are normalized as: `macos` -> `darwin`, `linux` -> `linux`, `windows`/`win32` -> `windows`. Unknown values are preserved in ecosystem metadata and reported as warnings, not hard validation failures.
 - `homepage` maps to `registry.homepage` only when `metadata.skit.registry.homepage` is absent.
-- `install`, `nix`, `config`, `cliHelp`, `always`, `skillKey`, `emoji`, `envVars`, `dependencies`, `author`, and `links` are preserved as compatibility metadata for `inspect` and safety review. They do not create skit Skill dependencies in v1.
-- Top-level `requires`, `primaryEnv`, and `homepage` are accepted as fallback compatibility fields when no `metadata.clawdbot` / `metadata.clawdis` / `metadata.openclaw` / top-level `clawdis` block exists.
-- Top-level `env`, `dependencies`, `author`, and `links` are preserved as compatibility metadata only. They do not map to skit `requires` or `dependencies` unless a future spec explicitly defines that conversion.
+- `install`, `nix`, `config`, `cliHelp`, `always`, `skillKey`, `emoji`, `envVars`, `dependencies`, `author`, and `links` are preserved as ecosystem metadata for `inspect` and safety review. They do not create skit Skill dependencies in v1.
+- Top-level `requires`, `primaryEnv`, and `homepage` are accepted as fallback ecosystem fields when no `metadata.clawdbot` / `metadata.clawdis` / `metadata.openclaw` / top-level `clawdis` block exists.
+- Top-level `env`, `dependencies`, `author`, and `links` are preserved as ecosystem metadata only. They do not map to skit `requires` or `dependencies` unless a future spec explicitly defines that conversion.
 
 Conflict behavior:
 
-- Explicit `metadata.skit` fields win over compatibility-derived fields.
-- Compatibility metadata must not conflict-check with `metadata.skit`; lower-priority compatibility values are recorded as provenance/warnings rather than fatal errors.
-- `skill.yaml` conflicts only with `metadata.skit`, not with compatibility metadata.
+- Explicit `metadata.skit` fields win over ecosystem-derived fields.
+- Ecosystem metadata must not conflict-check with `metadata.skit`; lower-priority ecosystem values are recorded as provenance/warnings rather than fatal errors.
+- `skill.yaml` conflicts only with `metadata.skit`, not with ecosystem metadata.
 
 ---
 
@@ -214,7 +214,7 @@ Rules:
 - `skill.yaml` fields are the same fields under `metadata.skit`.
 - `license` belongs to standard `SKILL.md` frontmatter in v1. `skill.yaml` must not define it.
 - `metadata.skit` and `skill.yaml` are mutually exclusive v1 carriers. If both exist, skit fails with a clear conflict error and does not merge them.
-- `metadata.skit` is the practical v1 carrier because it preserves compatibility with current Skill clients.
+- `metadata.skit` is the practical v1 carrier because it stays inside the standard `SKILL.md` file.
 - `skit init` and migration commands generate `metadata.skit` by default in v1.
 
 ---
@@ -242,9 +242,9 @@ registry:slug
 clawhub:slug
 ```
 
-v1 closed-loop install support is required for `local` and `github` sources. Generic `git` and `gitlab` forms may be parsed in v1 to produce clear "provider not implemented yet" errors, but their fetch/restore closed loop is v1.x work.
+v1 closed-loop install support is required for `local`, `github`, `gitlab`, and generic `git` sources.
 
-`owner/repo@skill-name`, `github:owner/repo@skill-name`, and `source#ref@skill-name` are compatibility shortcuts. New scripts should prefer `--skill <name>` because git refs, SSH locators, URLs, and local paths may legally contain `@`.
+`owner/repo@skill-name`, `github:owner/repo@skill-name`, and `source#ref@skill-name` are supported inline selectors. New scripts should prefer `--skill <name...>` for one source when git refs, SSH locators, URLs, or local paths may legally contain `@`.
 
 ### Parsing Rules
 
@@ -253,16 +253,16 @@ Parsing must be deterministic before network resolution.
 General rules:
 
 - `#` separates a source locator from a ref selector. Use the first `#`; additional `#` characters are invalid.
-- `@skill-name` inside the ref selector is recognized only as a compatibility shortcut for interactive CLI input.
-- `owner/repo@skill-name` and `github:owner/repo@skill-name` are recognized as compatibility shortcuts when the suffix after the last `@` matches the standard Skill name pattern.
-- Non-interactive use should pass `--skill <name>` instead of encoding the Skill selector in the source string.
+- `@skill-name` inside the ref selector is recognized as an inline Skill selector.
+- `owner/repo@skill-name` and `github:owner/repo@skill-name` are recognized as inline selectors when the suffix after the last `@` matches the standard Skill name pattern.
+- Non-interactive use may pass `--skill <name...>` instead of encoding the Skill selector in the source string.
 - If `@skill-name` is present and `--skill` is also present, `--skill` wins and skit should warn that the inline selector was ignored.
 - If the suffix after the last `@` matches the standard Skill name pattern, it may be treated as a Skill selector; otherwise the whole selector is treated as `ref`.
 - Git SSH user separators, such as `git@github.com:owner/repo.git`, are part of the source locator and must not be interpreted as Skill selectors.
 - URLs, generic git URLs, and local paths treat `@` as part of the locator unless a `#ref@skill-name` selector is present. Use `--skill` for these source forms.
 - Branch and tag refs may contain `/` and `@`. Use `--skill` when a ref contains `@` to avoid ambiguity.
 - Local paths may contain `@` and `#` only when passed through the platform path parser as an existing path. Otherwise `#` keeps its source/ref meaning.
-- Ambiguous non-interactive input must fail with a usage error that suggests `--skill <name>`.
+- Ambiguous non-interactive input must fail with a usage error that suggests `--skill <name...>`.
 
 GitHub tree URL rules:
 
@@ -287,7 +287,7 @@ Well-known and registry source rules:
 
 - HTTP(S) URLs that are not GitHub, GitLab, custom GitLab tree URLs, or `.git` URLs are recognized as `well-known` sources.
 - `registry:<slug>` and `clawhub:<slug>` are recognized as registry source locators.
-- v1 recognizes these source kinds for clear diagnostics and future compatibility, but does not fetch or install them by default.
+- v1 recognizes these source kinds for clear diagnostics, but does not fetch or install them by default.
 
 Skill selection rules:
 
@@ -491,7 +491,7 @@ Field rules:
 - `source.resolvedRef`: optional immutable resolved identity, such as a git commit SHA. It is required for mutable git refs after network resolution.
 - `source.subpath`: optional slash-normalized path to the Skill root within the source.
 - `source.skill`: optional final runtime Skill selector. It must be present when the original source contained multiple Skills or an inline `@skill` shortcut was used.
-- `registry`: optional. Present only when the Skill came from a registry provider or a compatibility import can identify registry origin.
+- `registry`: optional. Present only when the Skill came from a registry provider or an ecosystem import can identify registry origin.
 - `registry.name`: optional configured source name, such as `clawhub`.
 - `registry.url`: optional registry base URL.
 - `registry.slug`: optional registry public identifier.
@@ -501,14 +501,14 @@ Field rules:
 - `download.url`: optional canonical download URL.
 - `download.sha256`: optional SHA-256 digest of the raw downloaded bytes, encoded as `sha256-<base64url-no-padding-digest>`.
 - `dependencies`: optional array of dependency edges resolved during install. Each edge records the dependency runtime `name`, resolved dependency `source`, and `optional` flag. The full dependency Skill must also have its own top-level entry in `skills`.
-- `incomplete`: optional boolean. Present and true only for lossy compatibility imports that cannot yet provide enough source/hash data for reproducible restore.
-- `warnings`: optional string array. Used for lossy imports and compatibility decisions such as lowercase `skill.md`.
+- `incomplete`: optional boolean. Present and true only for lossy ecosystem imports that cannot yet provide enough source/hash data for reproducible restore.
+- `warnings`: optional string array. Used for lossy imports and ecosystem decisions such as lowercase `skill.md`.
 
 Lock key and name conflict rules:
 
 - The `skills` object key is the runtime Skill `name`.
 - v1 does not support installing two different Skills with the same runtime `name` into the same project or global lock.
-- Re-adding the same `name` with the same source identity and tree hash is a no-op/update of equivalent metadata.
+- Installing the same `name` with the same source identity and tree hash is a no-op/update of equivalent metadata.
 - Adding the same `name` with a different source identity or tree hash fails with a conflict error.
 - Alias, namespace, or multi-origin same-name installs are deferred.
 
@@ -595,7 +595,7 @@ Flag rules:
 - When a source contains multiple Skills and neither `--all` nor `--skill` is set, interactive mode prompts and non-interactive mode fails with a usage error.
 - `--yes` disables confirmation prompts but does not imply `--all`.
 - `--ignore-deps` skips dependency installation and records a warning in the result output; it must not create fake dependency lock entries.
-- `--full-depth` enables depth-limited recursive source discovery for compatibility with repositories that store Skills outside common priority paths.
+- `--full-depth` enables depth-limited recursive source discovery for repositories that store Skills outside common priority paths.
 - `--no-active` writes store and lock only.
 - `--force` permits replacing an existing non-symlink active path.
 
@@ -606,7 +606,7 @@ Searches for Skills using a skills.sh-compatible search API.
 Environment:
 
 - `SKIT_SEARCH_API_URL`: optional search API base URL.
-- `SKILLS_API_URL`: compatibility fallback used when `SKIT_SEARCH_API_URL` is unset.
+- `SKILLS_API_URL`: fallback used when `SKIT_SEARCH_API_URL` is unset.
 
 Behavior:
 
@@ -623,7 +623,7 @@ With no source arguments, restores project Skills from `.agent/skills/skit.lock`
 
 If `.agent/skills/skit.lock` is absent, skit may read compatible existing lock files and suggest `skit import-lock`.
 
-Entries with `incomplete: true` are not restored automatically. `skit install` must report them and suggest re-adding or inspecting the Skill.
+Entries with `incomplete: true` are not restored automatically. `skit install` must report them and suggest installing from an explicit source or inspecting the Skill.
 
 ### `skit list`
 
@@ -728,7 +728,7 @@ No `export-lock` in v1.
 
 ---
 
-## 9. Compatibility Imports
+## 9. Ecosystem Imports
 
 ### `skills-lock.json`
 
@@ -793,9 +793,9 @@ Install should warn on:
 - Reads `metadata.skit`.
 - Reads `skill.yaml` only when `metadata.skit` is absent.
 - Fails when both `metadata.skit` and `skill.yaml` exist.
-- Maps ClawHub/OpenClaw compatibility `requires`.
-- Normalizes compatibility `os: macos` to `platforms.os: darwin`.
-- Preserves compatibility `install`, `nix`, `config`, and `cliHelp` without executing them.
+- Maps ClawHub/OpenClaw `requires`.
+- Normalizes ecosystem `os: macos` to `platforms.os: darwin`.
+- Preserves ecosystem `install`, `nix`, `config`, and `cliHelp` without executing them.
 
 ### Source Parser
 
@@ -854,14 +854,14 @@ Install should warn on:
 - Standard field validation.
 - `metadata.skit` parser.
 - `skill.yaml` parser with mutual exclusion.
-- ClawHub/OpenClaw compatibility mapper.
+- ClawHub/OpenClaw ecosystem metadata mapper.
 
 ### M3: Source Parser
 
 - Recognized source syntax and v1 provider diagnostics.
 - Local path normalization.
 - Unsafe subpath rejection.
-- Clear not-implemented diagnostics for recognized v1.x source forms.
+- Clear diagnostics for recognized unsupported source forms.
 
 ### M4: Store And Lock
 
@@ -893,7 +893,7 @@ Install should warn on:
 - Initial JSON output for `list`, `inspect`, and `doctor`.
 - `skit init` template generation.
 
-### M8 / v1.x: Registry Providers
+### M8: Registry Providers
 
 - Registry provider closed loop.
 - Well-known registry discovery.
@@ -905,12 +905,12 @@ Install should warn on:
 - Lock files contain no timestamps in v1. A separate state file is deferred.
 - `metadata.skit.version` is inspect-only in v1.
 - v1 parses `skill.yaml` only when `metadata.skit` is absent and does not generate it by default.
-- Lowercase `skill.md` is accepted with a warning for ecosystem compatibility.
+- Lowercase `skill.md` is accepted with a warning for ecosystem interoperability.
 - Lossy lock imports set `incomplete: true` and are not restored automatically.
 - Required dependency failure blocks installation. Optional dependency failure warns and continues.
-- `metadata.clawhub` is not a v1 compatibility namespace.
+- `metadata.clawhub` is not a v1 ClawHub/OpenClaw namespace.
 - v1 provider scope is `local`, `github`, `gitlab`, and generic `git`. Registry and well-known providers are recognized but remain future work.
-- `owner/repo@skill-name`, `github:owner/repo@skill-name`, and `source#ref@skill-name` are compatibility shortcuts; `--skill <name...>` is the preferred non-ambiguous selector for one source.
+- `owner/repo@skill-name`, `github:owner/repo@skill-name`, and `source#ref@skill-name` are supported inline selectors; `--skill <name...>` is the preferred non-ambiguous selector for one source.
 - v1 activates Skills via `.agent/skills` symlinks to immutable global store snapshots.
 - v1 store paths use `$XDG_DATA_HOME/skit/store/<hashes.tree>/<skill-name>/`.
 - v1 rejects same-name different-origin lock conflicts.

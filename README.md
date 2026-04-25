@@ -12,7 +12,7 @@ diagnose declared local requirements.
 
 ## Features
 
-- Standards-oriented `SKILL.md` parsing with ecosystem compatibility metadata.
+- Standards-oriented `SKILL.md` parsing with ecosystem metadata.
 - Content-addressed global store under XDG data directories.
 - Project and global activation via `.agent/skills` symlinks.
 - Deterministic `skit.lock` files stored next to active Skills.
@@ -190,7 +190,7 @@ Discovery is bounded and deterministic:
 - `metadata.internal: true` Skills are skipped unless selected explicitly with
   `--skill`.
 
-Lowercase `skill.md` is accepted for compatibility and recorded as a warning.
+Lowercase `skill.md` is accepted for ecosystem interoperability and recorded as a warning.
 
 ## Metadata
 
@@ -214,7 +214,7 @@ metadata:
 ---
 ```
 
-Compatibility metadata such as `metadata.openclaw.requires` is preserved for
+Ecosystem metadata such as `metadata.openclaw.requires` is preserved for
 inspection and diagnostics. It is not executed.
 
 ## Safety
@@ -226,7 +226,7 @@ The CLI rejects unsafe source subpaths, rejects non-regular files while copying
 snapshots, normalizes executable modes, verifies store hashes, and records
 warnings for suspicious content such as piping network downloads into a shell.
 
-## Compatibility Imports
+## Ecosystem Imports
 
 Existing ecosystem lock files can be imported:
 
