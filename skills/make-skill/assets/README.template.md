@@ -14,6 +14,10 @@ used by skills-compatible agents.
 
 ## Installation
 
+Recommended: use `skit` for reproducible installs, sparse git subpath fetches,
+lock files, and requirement diagnostics. Other install methods are included for
+agents or workflows that do not use `skit`.
+
 ### skit
 
 Install one skill:

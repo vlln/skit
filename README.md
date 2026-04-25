@@ -118,6 +118,19 @@ skit inspect skill-name
 skit doctor
 ```
 
+## Bundled Skills
+
+Install bundled skills directly from this repository with `skit`:
+
+```sh
+skit install --global vlln/skit/skills/<skill-name>
+```
+
+| Skill | Description |
+|-------|-------------|
+| [`search-skills`](skills/search-skills) | Find, evaluate, inspect, and install agent skills with the `skit` CLI. |
+| [`make-skill`](skills/make-skill) | Create or revise Agent Skills with precise frontmatter, concise instructions, validation checks, and skit-friendly metadata. |
+
 ## Commands
 
 ```text
