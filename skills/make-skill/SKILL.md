@@ -1,6 +1,6 @@
 ---
 name: make-skill
-description: Create or revise an Agent Skills repository with one or more skills under skills/, precise SKILL.md frontmatter, concise task-specific instructions, validation checks, and skit-friendly metadata. Use when the user asks to make, draft, improve, package, review, or standardize a skill repo or skill collection.
+description: Create or revise Agent Skills repositories with one or more skills under skills/, precise SKILL.md frontmatter, concise instructions, validation checks, and skit-friendly metadata.
 license: MIT
 compatibility: Agent Skills SKILL.md format; optimized for skit-managed skill repositories.
 metadata:
@@ -41,8 +41,8 @@ Use `make-skill` for this skill. It is short, imperative, and Unix-like.
    real repetition or keep that skill's `SKILL.md` concise.
 6. Create or update the repository root `README.md` from
    `assets/README.template.md`.
-7. Validate every skill's frontmatter, trigger description, body constraints,
-   and examples.
+7. Validate every skill's frontmatter, description, body constraints, and
+   examples.
 
 ## Frontmatter Template
 
@@ -51,7 +51,7 @@ Start from this template and remove fields that do not apply:
 ```yaml
 ---
 name: skill-name
-description: Use this skill when the user needs [specific task], including [trigger phrases or adjacent intents]. It helps the agent [concrete capability] without [important boundary].
+description: [One concise sentence describing the skill's specific capability and the situations where it is useful.]
 license: MIT
 compatibility: Requires [specific tools, product, network, platform, or runtime]. Omit this field if there are no special requirements.
 metadata:
@@ -76,7 +76,8 @@ Rules:
 
 - `name` and `description` are required.
 - Keep `description` under 1024 characters.
-- Write `description` as activation guidance: "Use this skill when..."
+- Write `description` as a concise capability summary with enough context for
+  an agent to decide when the skill is relevant.
 - Include `license` when the skill is intended to be shared.
 - Include `compatibility` only for real requirements.
 - Use `metadata.skit.requires` only for requirements the agent can diagnose.
@@ -165,7 +166,8 @@ Before finishing, check:
 
 - Every skill directory name matches its `name`.
 - Every `SKILL.md` frontmatter parses as YAML.
-- Every `description` states when to use that skill and when not to.
+- Every `description` clearly identifies the skill's purpose and relevant use
+  cases without boilerplate phrasing.
 - Required tools/env/platforms are real and minimal.
 - Each skill body is procedural, concise, and domain-specific.
 - Any examples are runnable or clearly marked as templates.
