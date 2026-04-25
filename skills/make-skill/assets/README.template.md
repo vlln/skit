@@ -12,6 +12,14 @@ used by skills-compatible agents.
 |-------|-------------|
 | [`<skill-name>`](skills/<skill-name>) | <one-sentence description> |
 
+## Quick Start
+
+Paste this into your AI agent (Claude Code, Cursor, OpenAI Assistants, etc.):
+
+```text
+Install the Agent Skills from https://github.com/<owner>/<repo> with skit. If skit is not installed, install it from https://github.com/vlln/skit first. Then install all skills globally.
+```
+
 ## Installation
 
 Recommended: install these skills with

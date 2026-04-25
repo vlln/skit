@@ -148,6 +148,11 @@ mechanics there, such as when the agent should read `references/`, how helper
 scripts are invoked, or detailed implementation rules. Put that operational
 guidance in the relevant `SKILL.md`.
 
+Include the template's Quick Start section as an agent-friendly copy/paste
+prompt for users. Keep it generic, using the published GitHub repository URL and
+the `https://github.com/vlln/skit` link; do not mention local checkout paths or
+skill internals there.
+
 In the Installation section, start from the template's `skit` block and preserve
 the exact skit project link `https://github.com/vlln/skit`. Do not infer or
 substitute another skit repository owner. Show a concrete package-manager
