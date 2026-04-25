@@ -18,16 +18,17 @@ Use this skill when the user wants an installable agent skill or asks whether a 
 If `skit` is missing, install it from the skit repository:
 
 ```sh
-go install github.com/vlln/skit/cmd/skit@latest
+curl -fsSLO https://raw.githubusercontent.com/vlln/skit/main/install.sh
+sh install.sh
 ```
 
-If working from a local checkout:
+Use release binaries or package manager installs when available. If working from a local checkout:
 
 ```sh
 go install ./cmd/skit
 ```
 
-Ensure the Go binary directory, usually `$(go env GOPATH)/bin`, is on `PATH`.
+Ensure the install directory, usually `~/.local/bin`, is on `PATH`.
 
 ## Workflow
 

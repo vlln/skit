@@ -25,7 +25,25 @@ diagnose declared local requirements.
 
 ## Installation
 
-From this repository:
+Recommended install path for users is a prebuilt binary from GitHub Releases.
+Release artifacts should be published for macOS, Linux, and Windows, with a
+checksum file. macOS and Linux artifacts use `.tar.gz`; Windows artifacts use
+`.zip`. Once a release is published, install macOS/Linux with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/vlln/skit/main/install.sh | sh
+```
+
+The installer should detect the platform, download the matching release asset,
+verify checksums, and place `skit` in `~/.local/bin` or `SKIT_INSTALL_DIR`.
+
+Package-manager distribution can layer on top of the same release artifacts:
+
+```sh
+brew install vlln/tap/skit
+```
+
+From a local checkout, for development:
 
 ```sh
 go install ./cmd/skit
@@ -40,8 +58,8 @@ go build -o skit ./cmd/skit
 
 Requirements:
 
-- Go 1.23+
 - `git` for remote git sources
+- Go 1.23+ only when building from source
 
 ## Quick Start
 
