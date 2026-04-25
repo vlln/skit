@@ -73,7 +73,12 @@ func Clone(ctx context.Context, url, ref, tmpParent string) (CloneResult, error)
 	}
 	if fullSHA.MatchString(ref) {
 		if err := runGit(ctx, dir, "checkout", "--detach", ref); err != nil {
-			return result, fmt.Errorf("checkout %s: %w", ref, err)
+			if fetchErr := runGit(ctx, dir, "fetch", "--depth", "1", "origin", ref); fetchErr != nil {
+				return result, fmt.Errorf("checkout %s: %w; fetch by commit also failed: %v", ref, err, fetchErr)
+			}
+			if err := runGit(ctx, dir, "checkout", "--detach", ref); err != nil {
+				return result, fmt.Errorf("checkout %s after fetch: %w", ref, err)
+			}
 		}
 	}
 	resolved, err := outputGit(ctx, dir, "rev-parse", "HEAD")

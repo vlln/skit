@@ -99,6 +99,70 @@ func TestInstallRestoresMissingStoreFromLocalSource(t *testing.T) {
 	}
 }
 
+func TestInstallRestoresMissingStoreFromLockedGitCommit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	project := t.TempDir()
+	repo := filepath.Join(project, "remote")
+	if err := os.MkdirAll(repo, 0755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, repo, "init", "-b", "main")
+	git(t, repo, "config", "user.email", "test@example.com")
+	git(t, repo, "config", "user.name", "Test")
+	writeSkillWithBody(t, repo, "---\nname: demo\ndescription: Original skill.\n---\n# Demo\noriginal\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-m", "initial")
+	initialCommit := gitOutput(t, repo, "rev-parse", "HEAD")
+	parsed, err := skill.ParseDir(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := store.PathsFor(Project, project)
+	installed, err := store.InstallSnapshot(paths, parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockedHash := installed.Hashes.Tree
+	lockedStorePath := installed.Path
+	lock := lockfile.New()
+	lock.Skills["demo"] = lockfile.Entry{
+		Name:        "demo",
+		Description: "Original skill.",
+		Source: lockfile.Source{
+			Type:        "git",
+			Locator:     "git-local",
+			URL:         repo,
+			Ref:         "main",
+			ResolvedRef: initialCommit,
+			Skill:       "demo",
+		},
+		Hashes: lockfile.Hashes{Tree: installed.Hashes.Tree, SkillMD: installed.Hashes.SkillMD},
+	}
+	if err := lockfile.Write(paths.Lock, lock); err != nil {
+		t.Fatal(err)
+	}
+
+	writeSkillWithBody(t, repo, "---\nname: demo\ndescription: Updated skill.\n---\n# Demo\nupdated\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-m", "update")
+	if err := os.RemoveAll(lockedStorePath); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Install(InstallRequest{CWD: project, Scope: Project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Restored) != 1 || result.Restored[0].Hashes.Tree != lockedHash {
+		t.Fatalf("result = %#v, locked hash = %s", result, lockedHash)
+	}
+	if _, err := os.Stat(lockedStorePath); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestInstallRejectsCorruptExistingStore(t *testing.T) {
 	project := t.TempDir()
 	source := filepath.Join(project, "corrupt-demo")
@@ -647,4 +711,15 @@ func git(t *testing.T, dir string, args ...string) {
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)
 	}
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v failed: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
 }
