@@ -237,6 +237,9 @@ v1 修订：
 ### 5.1 现状：skills.sh 并非“源”，而是搜索引擎
 
 skills.sh 不托管 Skill 文件，只维护搜索索引，底层安装直接 `git clone` GitHub，故无“换源”概念。
+GitHub Release 发布不会自动把 Skill 注册进 skills.sh；公开文档只说明
+leaderboard/search 与 `skills` CLI 的匿名安装遥测有关。因此 skit 暂时把
+skills.sh 视为 search provider，而不是 publish target 或 install provider。
 
 ### 5.2 skit 引入“源”的必要性
 
@@ -277,6 +280,13 @@ registry provider 额外支持：
 - download；
 - file fetch；
 - moderation/security status。
+
+搜索聚合去重原则（后置能力）：
+
+- 精确来源去重：`provider + canonical source + subpath + skill name`；
+- 内容身份去重：已知 `tree hash`、registry digest 或 package digest 相同时可合并；
+- 展示分组不等于安装合并：同名 Skill 或同仓库结果可以分组显示，但不同来源必须保留独立安装选择；
+- skills.sh 结果继续走 Git/GitHub 安装；ClawHub/registry 结果可走 registry 安装、版本和安全元数据。
 
 ### 5.3 源配置（后置能力，`~/.config/skit/config.yaml`）
 

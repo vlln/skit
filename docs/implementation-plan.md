@@ -182,8 +182,24 @@ Network integration tests should remain opt-in.
 ## 8. Next Work
 
 - Add `skit tidy` or `skit store prune` for unreferenced store snapshots.
-- Expand registry/well-known provider support when source semantics are clear.
-- Improve search result ranking and provider configuration.
+- Document that `skills.sh` is a search/leaderboard service, not a publish
+  target. GitHub releases do not automatically register Skills there; public
+  listing currently appears tied to the `skills` CLI ecosystem and its
+  aggregated install telemetry.
+- Add a `SearchProvider` layer before adding more install providers. Initial
+  candidates:
+  - `skills.sh`: search-only, returns GitHub-backed install hints.
+  - `clawhub`: registry-backed search with richer metadata when configured.
+- Add a conservative search aggregation and deduplication policy:
+  - exact source identity: provider, canonical source, subpath, and Skill name;
+  - content identity: tree hash, registry digest, or package digest when known;
+  - display grouping: same Skill name or same repository groups results but
+    does not collapse distinct install choices.
+- Keep `skills.sh` and ClawHub semantics separate. `skills.sh` search results
+  should continue to install through Git/GitHub source resolution; ClawHub or
+  future registries may support version, digest, download, moderation, and
+  security status.
+- Add registry/well-known provider support after search aggregation is stable.
 - Add release packaging after the CLI surface settles.
 - Consider agent-specific symlink helpers only if `.agent/skills` is not enough
   for real workflows.
