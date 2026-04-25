@@ -129,6 +129,10 @@ Implemented source forms:
 - generic `.git` URLs
 - inline selectors: `owner/repo@skill-name`, `source#ref@skill-name`
 
+Git sources with an explicit subpath use sparse checkout with blob filtering
+when possible. Sources without an explicit subpath keep the regular shallow
+clone behavior because discovery must inspect the repository layout.
+
 Discovery order:
 
 1. Source root containing `SKILL.md` or `skill.md`.

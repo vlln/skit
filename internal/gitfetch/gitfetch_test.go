@@ -36,6 +36,40 @@ func TestCloneLocalRepo(t *testing.T) {
 	}
 }
 
+func TestCloneWithOptionsSparsePath(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	repo := t.TempDir()
+	git(t, repo, "init", "-b", "main")
+	git(t, repo, "config", "user.email", "test@example.com")
+	git(t, repo, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("demo\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	skillDir := filepath.Join(repo, "skills", "demo")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: demo\ndescription: Demo.\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-m", "init")
+
+	result, err := CloneWithOptions(context.Background(), repo, "", t.TempDir(), CloneOptions{SparsePaths: []string{"skills/demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer Remove(result.Dir)
+	if _, err := os.Stat(filepath.Join(result.Dir, "skills", "demo", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(result.Dir, "README.md")); !os.IsNotExist(err) {
+		t.Fatalf("README.md should not be checked out in sparse clone: %v", err)
+	}
+}
+
 func TestResolveTreePathPrefersLongestRef(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")

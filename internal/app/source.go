@@ -78,7 +78,7 @@ func resolveOneForInstall(ctx context.Context, paths store.Paths, src source.Sou
 		if err := resolveTreeSource(ctx, &src); err != nil {
 			return skill.Skill{}, src, workRoot, resolvedRef, cleanup, err
 		}
-		clone, err := gitfetch.Clone(ctx, src.URL, src.Ref, paths.Tmp)
+		clone, err := gitfetch.CloneWithOptions(ctx, src.URL, src.Ref, paths.Tmp, cloneOptions(src))
 		if err != nil {
 			return skill.Skill{}, src, workRoot, resolvedRef, cleanup, err
 		}
@@ -176,6 +176,13 @@ func parseOptionsForSource(src source.Source) skill.ParseOptions {
 
 func isGitProvider(t source.Type) bool {
 	return t == source.GitHub || t == source.GitLab || t == source.Git
+}
+
+func cloneOptions(src source.Source) gitfetch.CloneOptions {
+	if isGitProvider(src.Type) && src.Subpath != "" {
+		return gitfetch.CloneOptions{SparsePaths: []string{src.Subpath}}
+	}
+	return gitfetch.CloneOptions{}
 }
 
 func relativeSubpath(root, child string) string {

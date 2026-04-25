@@ -211,6 +211,9 @@ owner/repo@skill-name
 Use `--skill <name>` when a source locator or git ref contains `@` and would be
 ambiguous.
 
+Git sources with an explicit subpath, such as `vlln/skit/search-skills`, use a
+sparse checkout when possible so install does not need the whole worktree.
+
 ## Discovery
 
 Discovery is bounded and deterministic:

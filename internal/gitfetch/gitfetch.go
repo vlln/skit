@@ -22,6 +22,10 @@ type CloneResult struct {
 	ResolvedRef string
 }
 
+type CloneOptions struct {
+	SparsePaths []string
+}
+
 type TreeResolution struct {
 	Ref     string
 	Subpath string
@@ -40,6 +44,10 @@ func (e *CloneError) Error() string {
 }
 
 func Clone(ctx context.Context, url, ref, tmpParent string) (CloneResult, error) {
+	return CloneWithOptions(ctx, url, ref, tmpParent, CloneOptions{})
+}
+
+func CloneWithOptions(ctx context.Context, url, ref, tmpParent string, opts CloneOptions) (CloneResult, error) {
 	var result CloneResult
 	if _, err := exec.LookPath("git"); err != nil {
 		return result, fmt.Errorf("git executable not found")
@@ -61,6 +69,10 @@ func Clone(ctx context.Context, url, ref, tmpParent string) (CloneResult, error)
 	cloneCtx, cancel := context.WithTimeout(ctx, cloneTimeout)
 	defer cancel()
 	args := []string{"clone"}
+	sparsePaths := cleanSparsePaths(opts.SparsePaths)
+	if len(sparsePaths) > 0 {
+		args = append(args, "--filter=blob:none", "--sparse")
+	}
 	if !fullSHA.MatchString(ref) {
 		args = append(args, "--depth", "1")
 	}
@@ -70,6 +82,11 @@ func Clone(ctx context.Context, url, ref, tmpParent string) (CloneResult, error)
 	args = append(args, url, dir)
 	if err := runGit(cloneCtx, "", args...); err != nil {
 		return result, classifyCloneError(url, err, cloneCtx.Err())
+	}
+	if len(sparsePaths) > 0 {
+		if err := runGit(ctx, dir, append([]string{"sparse-checkout", "set", "--no-cone", "--"}, sparsePatterns(sparsePaths)...)...); err != nil {
+			return result, fmt.Errorf("configure sparse checkout: %w", err)
+		}
 	}
 	if fullSHA.MatchString(ref) {
 		if err := runGit(ctx, dir, "checkout", "--detach", ref); err != nil {
@@ -91,6 +108,30 @@ func Clone(ctx context.Context, url, ref, tmpParent string) (CloneResult, error)
 	}
 	cleanup = false
 	return CloneResult{Dir: dir, Ref: actualRef, ResolvedRef: strings.TrimSpace(resolved)}, nil
+}
+
+func cleanSparsePaths(paths []string) []string {
+	var cleaned []string
+	seen := map[string]bool{}
+	for _, path := range paths {
+		path = strings.Trim(strings.ReplaceAll(path, "\\", "/"), "/")
+		if path == "" || path == "." || strings.HasPrefix(path, "../") || strings.Contains(path, "/../") {
+			continue
+		}
+		if !seen[path] {
+			cleaned = append(cleaned, path)
+			seen[path] = true
+		}
+	}
+	return cleaned
+}
+
+func sparsePatterns(paths []string) []string {
+	patterns := make([]string, 0, len(paths))
+	for _, path := range paths {
+		patterns = append(patterns, "/"+strings.Trim(path, "/")+"/")
+	}
+	return patterns
 }
 
 func ResolveTreePath(ctx context.Context, url, treePath string) (TreeResolution, error) {

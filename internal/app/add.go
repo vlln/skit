@@ -62,7 +62,7 @@ func Add(req AddRequest) (AddResult, error) {
 		if err := resolveTreeSource(ctx(req.Context), &src); err != nil {
 			return result, err
 		}
-		clone, err := gitfetch.Clone(ctx(req.Context), src.URL, src.Ref, paths.Tmp)
+		clone, err := gitfetch.CloneWithOptions(ctx(req.Context), src.URL, src.Ref, paths.Tmp, cloneOptions(src))
 		if err != nil {
 			return result, err
 		}

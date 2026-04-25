@@ -50,8 +50,12 @@ func Install(req InstallRequest) (InstallResult, error) {
 		}
 		root := entry.Source.Locator
 		cleanup := func() {}
+		src, err := sourceFromLock(entry.Source)
+		if err != nil {
+			return result, err
+		}
 		if isGitProvider(source.Type(entry.Source.Type)) {
-			clone, err := gitfetch.Clone(ctx(context.Background()), entry.Source.URL, refForInstall(entry.Source), paths.Tmp)
+			clone, err := gitfetch.CloneWithOptions(ctx(context.Background()), entry.Source.URL, refForInstall(entry.Source), paths.Tmp, cloneOptions(src))
 			if err != nil {
 				return result, err
 			}
@@ -63,10 +67,6 @@ func Install(req InstallRequest) (InstallResult, error) {
 		}
 		if entry.Source.Subpath != "" {
 			root = filepath.Join(root, filepath.FromSlash(entry.Source.Subpath))
-		}
-		src, err := sourceFromLock(entry.Source)
-		if err != nil {
-			return result, err
 		}
 		parsed, err := skill.ParseDirWithOptions(root, parseOptionsForSource(src))
 		if err != nil {
