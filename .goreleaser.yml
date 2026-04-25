@@ -18,7 +18,7 @@ builds:
 
 archives:
   - id: default
-    builds:
+    ids:
       - skit
     name_template: >-
       {{ .ProjectName }}_
@@ -31,6 +31,20 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+homebrew_casks:
+  - name: skit
+    ids:
+      - default
+    binaries:
+      - skit
+    repository:
+      owner: vlln
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/vlln/skit"
+    description: "Small, reproducible Skill manager for agent ecosystems"
+    license: "MIT"
 
 changelog:
   use: git

@@ -40,7 +40,7 @@ verify checksums, and place `skit` in `~/.local/bin` or `SKIT_INSTALL_DIR`.
 Package-manager distribution can layer on top of the same release artifacts:
 
 ```sh
-brew install vlln/tap/skit
+brew install --cask vlln/tap/skit
 ```
 
 From a local checkout, for development:
