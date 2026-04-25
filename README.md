@@ -43,6 +43,18 @@ Package-manager distribution can layer on top of the same release artifacts:
 brew install --cask vlln/tap/skit
 ```
 
+Uninstall:
+
+```sh
+rm -f "${SKIT_INSTALL_DIR:-$HOME/.local/bin}/skit"
+```
+
+If installed with Homebrew:
+
+```sh
+brew uninstall --cask skit
+```
+
 From a local checkout, for development:
 
 ```sh
