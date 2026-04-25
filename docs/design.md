@@ -477,7 +477,7 @@ Canonical store：
 - v1 store layout 固定为 `<store>/<hashes.tree>/<skill-name>/`，其中 `hashes.tree` 已包含 `sha256-` 前缀。
 - 安装写入必须先进入临时目录，完成校验与 hash 后再原子移动到 content-addressed store；失败安装不得留下半成品最终目录。
 - `skit install` 默认在 active root 创建指向 store snapshot 的软链接；`--no-active` 可仅写 store/lock。
-- `skit remove` 默认移除 lock entry 和 active symlink；只有能确认 store 内容未被任何 lock 引用时才可清理目录。更完整的清理交给 `skit store prune`。
+- `skit remove` 默认移除 lock entry 和 active symlink；`remove --prune` 只有能确认 store 内容未被任何 lock 引用时才清理该 snapshot；`skit gc` 负责清理已知 project/global lock 都不再引用的 store snapshot。
 
 ---
 

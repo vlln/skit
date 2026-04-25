@@ -37,3 +37,14 @@ func CacheHome() string {
 	}
 	return filepath.Join(home, ".cache")
 }
+
+func ConfigHome() string {
+	if v := os.Getenv("XDG_CONFIG_HOME"); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "."
+	}
+	return filepath.Join(home, ".config")
+}

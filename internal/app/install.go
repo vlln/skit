@@ -13,8 +13,9 @@ import (
 )
 
 type InstallRequest struct {
-	CWD   string
-	Scope Scope
+	CWD    string
+	Scope  Scope
+	Agents []string
 }
 
 type InstallResult struct {
@@ -25,7 +26,12 @@ type InstallResult struct {
 
 func Install(req InstallRequest) (InstallResult, error) {
 	var result InstallResult
-	paths := store.PathsFor(req.Scope, cleanCWD(req.CWD))
+	cwd := cleanCWD(req.CWD)
+	paths := store.PathsFor(req.Scope, cwd)
+	activeDirs, err := activeDirs(paths, req.Scope, cwd, req.Agents)
+	if err != nil {
+		return result, err
+	}
 	lock, err := lockfile.Read(paths.Lock)
 	if err != nil {
 		return result, err
@@ -40,11 +46,13 @@ func Install(req InstallRequest) (InstallResult, error) {
 			if err := verifyStoreEntry(paths, entry); err != nil {
 				return result, err
 			}
-			activePath, err := activate(paths, entry, storePath(paths, entry), true)
-			if err != nil {
-				return result, err
+			for _, dir := range activeDirs {
+				activePath, err := activateInDir(dir, entry, storePath(paths, entry), true)
+				if err != nil {
+					return result, err
+				}
+				result.ActivePaths = append(result.ActivePaths, activePath)
 			}
-			result.ActivePaths = append(result.ActivePaths, activePath)
 			result.Restored = append(result.Restored, entry)
 			continue
 		}
@@ -79,11 +87,13 @@ func Install(req InstallRequest) (InstallResult, error) {
 		if installed.Hashes.Tree != entry.Hashes.Tree || installed.Hashes.SkillMD != entry.Hashes.SkillMD {
 			return result, fmt.Errorf("hash mismatch restoring %q", entry.Name)
 		}
-		activePath, err := activate(paths, entry, installed.Path, true)
-		if err != nil {
-			return result, err
+		for _, dir := range activeDirs {
+			activePath, err := activateInDir(dir, entry, installed.Path, true)
+			if err != nil {
+				return result, err
+			}
+			result.ActivePaths = append(result.ActivePaths, activePath)
 		}
-		result.ActivePaths = append(result.ActivePaths, activePath)
 		result.Restored = append(result.Restored, entry)
 	}
 	return result, nil

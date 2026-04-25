@@ -13,6 +13,7 @@ type UpdateRequest struct {
 	CWD        string
 	Scope      Scope
 	Name       string
+	Agents     []string
 	IgnoreDeps bool
 }
 
@@ -20,7 +21,12 @@ type UpdateResult = AddResult
 
 func Update(req UpdateRequest) (UpdateResult, error) {
 	var result UpdateResult
-	paths := store.PathsFor(req.Scope, cleanCWD(req.CWD))
+	cwd := cleanCWD(req.CWD)
+	paths := store.PathsFor(req.Scope, cwd)
+	activeDirs, err := activeDirs(paths, req.Scope, cwd, req.Agents)
+	if err != nil {
+		return result, err
+	}
 	lock, err := lockfile.Read(paths.Lock)
 	if err != nil {
 		return result, err
@@ -40,6 +46,7 @@ func Update(req UpdateRequest) (UpdateResult, error) {
 		ignoreDeps: req.IgnoreDeps,
 		replace:    true,
 		visiting:   map[string]bool{},
+		activeDirs: activeDirs,
 	}
 	for _, name := range names {
 		current := session.lock.Skills[name]

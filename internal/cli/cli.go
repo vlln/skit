@@ -77,6 +77,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "Common flags:")
 	fmt.Fprintln(w, "  --project       Use project scope (default)")
 	fmt.Fprintln(w, "  -g, --global    Use global scope")
+	fmt.Fprintln(w, "  -a, --agent     Also activate for one or more agents")
 	fmt.Fprintln(w, "  -s, --skill     Select one or more Skills from one source")
 	fmt.Fprintln(w, "  --all           Install every discovered non-internal Skill")
 	fmt.Fprintln(w, "  --full-depth    Search recursively when installing a source")
@@ -93,8 +94,8 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit search:", err)
 		return 2
 	}
-	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth || opts.prune {
-		fmt.Fprintln(stderr, "skit search: --global, --skill, --all, --ignore-deps, --full-depth, and --prune are not supported")
+	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth || opts.prune {
+		fmt.Fprintln(stderr, "skit search: --global, --skill, --agent, --all, --ignore-deps, --full-depth, and --prune are not supported")
 		return 2
 	}
 	query := strings.TrimSpace(strings.Join(rest, " "))
@@ -114,22 +115,26 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "no skills found for %q\n", query)
 		return 0
 	}
-	fmt.Fprintln(stdout, "Install with: skit install <source@skill>")
-	fmt.Fprintln(stdout)
 	for _, result := range results {
 		source := result.Source
 		if source == "" {
 			source = result.Slug
 		}
-		fmt.Fprintf(stdout, "%s\t%s", result.Name, source)
+		target := source
+		if source != "" && result.Name != "" {
+			target = source + "@" + result.Name
+		}
+		fmt.Fprint(stdout, target)
 		if result.Installs > 0 {
 			fmt.Fprintf(stdout, "\t%s", formatInstalls(result.Installs))
 		}
-		fmt.Fprintln(stdout)
-		if source != "" && result.Name != "" {
-			fmt.Fprintf(stdout, "  skit install %s@%s\n", source, result.Name)
+		if result.Slug != "" {
+			fmt.Fprintf(stdout, "\thttps://skills.sh/%s", result.Slug)
 		}
+		fmt.Fprintln(stdout)
 	}
+	fmt.Fprintln(stdout)
+	fmt.Fprintln(stdout, "Install with: skit install <source@skill>")
 	return 0
 }
 
@@ -169,6 +174,7 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 			Scope:      opts.scope,
 			Source:     src,
 			Skills:     opts.skills,
+			Agents:     opts.agents,
 			All:        opts.all,
 			IgnoreDeps: opts.ignoreDeps,
 			FullDepth:  opts.fullDepth,
@@ -214,7 +220,7 @@ func runRestore(opts commonOptions, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit install: flags require at least one source")
 		return 2
 	}
-	result, err := app.Install(app.InstallRequest{CWD: cwd(), Scope: opts.scope})
+	result, err := app.Install(app.InstallRequest{CWD: cwd(), Scope: opts.scope, Agents: opts.agents})
 	if err != nil {
 		fmt.Fprintln(stderr, "skit install:", err)
 		return 1
@@ -243,6 +249,10 @@ func runList(args []string, stdout, stderr io.Writer) int {
 	}
 	if opts.prune {
 		fmt.Fprintln(stderr, "skit list: --prune is not supported")
+		return 2
+	}
+	if len(opts.agents) > 0 {
+		fmt.Fprintln(stderr, "skit list: --agent is not supported")
 		return 2
 	}
 	entries, err := app.List(app.ListRequest{CWD: cwd(), Scope: opts.scope})
@@ -278,6 +288,10 @@ func runRemove(args []string, stdout, stderr io.Writer) int {
 	}
 	if !opts.all && len(rest) == 0 {
 		fmt.Fprintln(stderr, "skit remove: expected at least one skill name or --all")
+		return 2
+	}
+	if len(opts.agents) > 0 {
+		fmt.Fprintln(stderr, "skit remove: --agent is not supported")
 		return 2
 	}
 	names := rest
@@ -324,8 +338,8 @@ func runGC(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit gc: unexpected arguments")
 		return 2
 	}
-	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth || opts.noActive || opts.force || opts.prune {
-		fmt.Fprintln(stderr, "skit gc: --global, --skill, --all, --ignore-deps, --full-depth, --no-active, --force, and --prune are not supported")
+	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth || opts.noActive || opts.force || opts.prune {
+		fmt.Fprintln(stderr, "skit gc: --global, --skill, --agent, --all, --ignore-deps, --full-depth, --no-active, --force, and --prune are not supported")
 		return 2
 	}
 	result, err := app.GC(app.GCRequest{CWD: cwd()})
@@ -363,7 +377,7 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	if len(rest) == 1 {
 		name = rest[0]
 	}
-	result, err := app.Update(app.UpdateRequest{CWD: cwd(), Scope: opts.scope, Name: name, IgnoreDeps: opts.ignoreDeps})
+	result, err := app.Update(app.UpdateRequest{CWD: cwd(), Scope: opts.scope, Name: name, Agents: opts.agents, IgnoreDeps: opts.ignoreDeps})
 	if err != nil {
 		fmt.Fprintln(stderr, "skit update:", err)
 		return 1
@@ -401,6 +415,10 @@ func runInspect(args []string, stdout, stderr io.Writer) int {
 	}
 	if opts.prune {
 		fmt.Fprintln(stderr, "skit inspect: --prune is not supported")
+		return 2
+	}
+	if len(opts.agents) > 0 {
+		fmt.Fprintln(stderr, "skit inspect: --agent is not supported")
 		return 2
 	}
 	if len(opts.skills) > 1 {
@@ -464,6 +482,10 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit doctor: --prune is not supported")
 		return 2
 	}
+	if len(opts.agents) > 0 {
+		fmt.Fprintln(stderr, "skit doctor: --agent is not supported")
+		return 2
+	}
 	result, err := app.Doctor(app.DoctorRequest{CWD: cwd(), Scope: opts.scope})
 	if err != nil {
 		fmt.Fprintln(stderr, "skit doctor:", err)
@@ -502,8 +524,8 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit init:", err)
 		return 2
 	}
-	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all || opts.prune {
-		fmt.Fprintln(stderr, "skit init: --global, --skill, --all, and --prune are not supported")
+	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.prune {
+		fmt.Fprintln(stderr, "skit init: --global, --skill, --agent, --all, and --prune are not supported")
 		return 2
 	}
 	if len(rest) > 1 {
@@ -538,6 +560,10 @@ func runImportLock(args []string, stdout, stderr io.Writer) int {
 	}
 	if opts.prune {
 		fmt.Fprintln(stderr, "skit import-lock: --prune is not supported")
+		return 2
+	}
+	if len(opts.agents) > 0 {
+		fmt.Fprintln(stderr, "skit import-lock: --agent is not supported")
 		return 2
 	}
 	result, err := app.ImportLock(app.ImportLockRequest{CWD: cwd(), Scope: opts.scope, Kind: rest[0]})
@@ -627,6 +653,7 @@ func printDependencies(w io.Writer, deps []lockfile.Dependency) {
 type commonOptions struct {
 	scope      app.Scope
 	skills     []string
+	agents     []string
 	all        bool
 	json       bool
 	ignoreDeps bool
@@ -676,6 +703,21 @@ func parseCommon(args []string) (commonOptions, []string, error) {
 				opts.skills = append(opts.skills, args[i])
 			}
 			if len(opts.skills) == 0 {
+				return opts, nil, fmt.Errorf("%s requires a value", arg)
+			}
+		case "-a", "--agent":
+			i++
+			if i >= len(args) {
+				return opts, nil, fmt.Errorf("%s requires a value", arg)
+			}
+			for ; i < len(args); i++ {
+				if strings.HasPrefix(args[i], "-") {
+					i--
+					break
+				}
+				opts.agents = append(opts.agents, args[i])
+			}
+			if len(opts.agents) == 0 {
 				return opts, nil, fmt.Errorf("%s requires a value", arg)
 			}
 		case "-y", "--yes":

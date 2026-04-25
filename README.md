@@ -7,8 +7,8 @@ discover Skills, fetch them from local and git sources, store immutable
 snapshots, write deterministic locks, activate Skills through symlinks, and
 diagnose declared local requirements.
 
-> Status: early v1. The CLI and lock format are still allowed to change before a
-> first stable release.
+> Status: v0.1. The CLI and lock format are usable, but still allowed to change
+> before a first stable release.
 
 ## Features
 
@@ -26,16 +26,16 @@ diagnose declared local requirements.
 ## Installation
 
 Recommended install path for users is a prebuilt binary from GitHub Releases.
-Release artifacts should be published for macOS, Linux, and Windows, with a
-checksum file. macOS and Linux artifacts use `.tar.gz`; Windows artifacts use
-`.zip`. Once a release is published, install macOS/Linux with:
+Release artifacts are published for macOS, Linux, and Windows, with a checksum
+file. macOS and Linux artifacts use `.tar.gz`; Windows artifacts use `.zip`.
+Install macOS/Linux with:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/vlln/skit/main/install.sh | sh
 ```
 
-The installer should detect the platform, download the matching release asset,
-verify checksums, and place `skit` in `~/.local/bin` or `SKIT_INSTALL_DIR`.
+The installer detects the platform, downloads the matching release asset,
+verifies checksums, and places `skit` in `~/.local/bin` or `SKIT_INSTALL_DIR`.
 
 Package-manager distribution can layer on top of the same release artifacts:
 
@@ -105,6 +105,13 @@ Restore active symlinks from the lock:
 skit install
 ```
 
+Also activate a Skill for Codex:
+
+```sh
+skit install ./my-skill --agent codex
+skit install --global ./my-skill --agent codex
+```
+
 Search for published Skills:
 
 ```sh
@@ -153,6 +160,7 @@ Common flags:
 ```text
 --project          Use project scope (default)
 --global           Use global scope
+--agent <names...> Also activate for specific agents, such as codex
 --skill <names...> Select one or more Skills from a single source
 --all              Install every discovered non-internal Skill from a source
 --full-depth       Search recursively for Skills when installing a source
@@ -162,6 +170,14 @@ Common flags:
 --prune            With remove, delete unreferenced store snapshots
 --json             Print JSON for supported commands
 ```
+
+`--agent` keeps the skit lock and content-addressed store as the source of
+truth, then creates extra symlinks for selected agents. Supported agent names:
+`codex`, `claude-code`, `cursor`, `gemini-cli`, and `opencode`. For Codex,
+project installs target `.agents/skills` and global installs target
+`${CODEX_HOME:-~/.codex}/skills`. The default skit active roots are already
+handled by `--project` and `--global`, so there is no separate universal agent
+target.
 
 `--skill` may be provided once. It can contain multiple space-separated Skill
 names for one source. For multiple sources, use inline selectors:

@@ -36,7 +36,11 @@ func activePath(paths store.Paths, entry lockfile.Entry) string {
 }
 
 func activate(paths store.Paths, entry lockfile.Entry, target string, force bool) (string, error) {
-	path := activePath(paths, entry)
+	return activateInDir(paths.Active, entry, target, force)
+}
+
+func activateInDir(activeDir string, entry lockfile.Entry, target string, force bool) (string, error) {
+	path := filepath.Join(activeDir, entry.Name)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return "", err
 	}

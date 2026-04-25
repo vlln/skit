@@ -22,6 +22,7 @@ type AddRequest struct {
 	Source     string
 	Skill      string
 	Skills     []string
+	Agents     []string
 	All        bool
 	IgnoreDeps bool
 	FullDepth  bool
@@ -99,6 +100,10 @@ func Add(req AddRequest) (AddResult, error) {
 	if err != nil {
 		return result, err
 	}
+	activeDirs, err := activeDirs(paths, req.Scope, cwd, req.Agents)
+	if err != nil {
+		return result, err
+	}
 	session := addSession{
 		ctx:        ctx(req.Context),
 		paths:      paths,
@@ -108,6 +113,7 @@ func Add(req AddRequest) (AddResult, error) {
 		noActive:   req.NoActive,
 		force:      req.Force,
 		visiting:   map[string]bool{},
+		activeDirs: activeDirs,
 	}
 	for _, parsed := range selected {
 		entry, storePath, err := session.installParsed(src, parsed, workRoot, resolvedRef)
@@ -133,6 +139,7 @@ type addSession struct {
 	force      bool
 	replace    bool
 	visiting   map[string]bool
+	activeDirs []string
 }
 
 func (s *addSession) installParsed(src source.Source, parsed skill.Skill, workRoot, resolvedRef string) (lockfile.Entry, string, error) {
@@ -183,11 +190,13 @@ func (s *addSession) installParsed(src source.Source, parsed skill.Skill, workRo
 		}
 	}
 	if !s.noActive {
-		activePath, err := activate(s.paths, entry, installed.Path, s.force)
-		if err != nil {
-			return lockfile.Entry{}, "", err
+		for _, dir := range s.activeDirs {
+			activePath, err := activateInDir(dir, entry, installed.Path, s.force)
+			if err != nil {
+				return lockfile.Entry{}, "", err
+			}
+			s.result.ActivePaths = append(s.result.ActivePaths, activePath)
 		}
-		s.result.ActivePaths = append(s.result.ActivePaths, activePath)
 	}
 	s.result.Warnings = appendUnique(s.result.Warnings, src.Warnings...)
 	s.result.Warnings = appendUnique(s.result.Warnings, safetyWarnings...)

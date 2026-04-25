@@ -293,7 +293,8 @@ Skill selection rules:
 
 - `--skill <name>` overrides any `@skill-name` selector in the source string.
 - Lock files must store the resolved Skill selector in `source.skill`; they must not preserve ambiguous inline `@skill-name` syntax.
-- If neither source selector nor `--skill` is provided and the source contains multiple Skills, interactive mode prompts and non-interactive mode fails unless `--all` is set.
+- If neither source selector nor `--skill` is provided and the source contains
+  multiple Skills, skit fails unless `--all` is set.
 - If the source resolves to exactly one Skill, that Skill is selected automatically.
 
 ### Skill Discovery
@@ -375,8 +376,11 @@ Store write rules:
 - Atomically rename the validated Skill into the content-addressed path.
 - If the final path already exists with the same tree hash and Skill name, reuse it.
 - If the final path already exists but the content differs, fail instead of overwriting.
-- `skit remove` removes the lock entry and active symlink by default. It may remove an unreferenced store directory only when this can be proven locally.
-- Future `skit store prune` may remove unreferenced content-addressed directories; v1 does not require it.
+- `skit remove` removes the lock entry and active symlink by default.
+- `skit remove --prune` may remove the removed store snapshot only when this
+  can be proven locally.
+- `skit gc` removes unreferenced content-addressed directories across known
+  project and global locks.
 
 ### Canonical Tree Hash
 
@@ -556,6 +560,7 @@ Options:
 
 - `--global`
 - `--project`
+- `--agent <names...>`
 - `--skill <name...>`
 - `--all`
 - `--yes`
@@ -578,11 +583,16 @@ Behavior:
 10. Install dependencies unless ignored.
 11. Update project or global lock.
 12. Create or update active symlinks unless `--no-active` is set.
+13. If `--agent` is set, also create symlinks to the same store snapshots in
+    the selected agent directories.
 
 `skit install --global` never modifies project `.agent/skills/skit.lock`.
 
 `skit install` writes the relevant lock file, stores immutable snapshots, and
 activates selected Skills via symlinks into the active root.
+
+`--agent` does not change lock identity or copy Skill contents into
+agent-specific state. It only creates additional active symlinks.
 
 Required dependency failures block installation. Optional dependency failures warn and continue.
 
@@ -592,12 +602,15 @@ Flag rules:
 - `--all` and `--skill` are mutually exclusive.
 - `--skill` may be provided once and may contain multiple space-separated names for one source.
 - `--skill` requires exactly one source. Multiple sources should use inline selectors such as `owner/repo@skill-name`.
-- When a source contains multiple Skills and neither `--all` nor `--skill` is set, interactive mode prompts and non-interactive mode fails with a usage error.
+- When a source contains multiple Skills and neither `--all` nor `--skill` is
+  set, skit fails with a usage error.
 - `--yes` disables confirmation prompts but does not imply `--all`.
 - `--ignore-deps` skips dependency installation and records a warning in the result output; it must not create fake dependency lock entries.
 - `--full-depth` enables depth-limited recursive source discovery for repositories that store Skills outside common priority paths.
 - `--no-active` writes store and lock only.
 - `--force` permits replacing an existing non-symlink active path.
+- `--agent` supports known agent targets such as `codex`, `claude-code`,
+  `cursor`, `gemini-cli`, and `opencode`.
 
 ### `skit search <query>`
 
@@ -613,13 +626,18 @@ Behavior:
 - Sends `GET /api/search?q=<query>&limit=<limit>` to the configured API.
 - Parses `skills[]` items with `id`, `name`, `source`, and `installs`.
 - Sorts results by install count descending.
-- Prints installable hints in the form `skit install <source>@<name>`.
+- Text output prints compact result lines in the form
+  `<source>@<name> <installs> https://skills.sh/<id>`, followed by one install
+  hint: `Install with: skit install <source@skill>`.
 - Supports `--json`.
 - Does not install or mutate lock/store state.
 
 ### `skit install` Restore Mode
 
 With no source arguments, restores project Skills from `.agent/skills/skit.lock`.
+With `--global`, restores global Skills from `~/.agent/skills/skit.lock`.
+With `--agent`, also recreates selected agent symlinks from the same lock
+entries.
 
 If `.agent/skills/skit.lock` is absent, skit may read compatible existing lock files and suggest `skit import-lock`.
 
@@ -648,6 +666,19 @@ Options:
 - `--global`
 - `--project`
 - `--yes`
+- `--prune`
+
+`--prune` deletes the removed Skill snapshot only when no known project or
+global lock still references it.
+
+### `skit gc`
+
+Prunes unreferenced store snapshots. `gc` scans known project/global locks and
+keeps any store snapshot still referenced by a non-incomplete lock entry.
+
+Options:
+
+- `--json`
 
 ### `skit init [name]`
 

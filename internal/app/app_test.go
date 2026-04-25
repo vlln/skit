@@ -21,6 +21,7 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
 	_ = os.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
+	_ = os.Setenv("HOME", filepath.Join(root, "home"))
 	code := m.Run()
 	_ = os.RemoveAll(root)
 	os.Exit(code)
@@ -72,6 +73,48 @@ func TestLocalClosedLoop(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(project, ".agent", "skills", "demo")); !os.IsNotExist(err) {
 		t.Fatalf("active symlink still exists after remove: %v", err)
+	}
+}
+
+func TestAddActivatesCodexProjectAgent(t *testing.T) {
+	project := t.TempDir()
+	source := filepath.Join(project, "demo")
+	writeSkill(t, source, "demo")
+
+	added, err := Add(AddRequest{CWD: project, Scope: Project, Source: source, Agents: []string{"codex"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsText(added.ActivePaths, filepath.Join(project, ".agents", "skills", "demo")) {
+		t.Fatalf("active paths = %#v", added.ActivePaths)
+	}
+	if info, err := os.Lstat(filepath.Join(project, ".agents", "skills", "demo")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("codex active symlink missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(project, ".agent", "skills", "skit.lock")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstallRestoresCodexGlobalAgent(t *testing.T) {
+	project := t.TempDir()
+	codexHome := filepath.Join(project, "codex-home")
+	t.Setenv("CODEX_HOME", codexHome)
+	source := filepath.Join(project, "demo")
+	writeSkill(t, source, "demo")
+
+	if _, err := Add(AddRequest{CWD: project, Scope: Global, Source: source, NoActive: true}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Install(InstallRequest{CWD: project, Scope: Global, Agents: []string{"codex"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsText(result.ActivePaths, filepath.Join(codexHome, "skills", "demo")) {
+		t.Fatalf("active paths = %#v", result.ActivePaths)
+	}
+	if info, err := os.Lstat(filepath.Join(codexHome, "skills", "demo")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("codex global active symlink missing: %v", err)
 	}
 }
 

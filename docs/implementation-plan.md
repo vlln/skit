@@ -60,6 +60,7 @@ Implemented public commands:
 | `skit search <query>` | `app.Search` | skills.sh-compatible API |
 | `skit list` / `skit ls` | `app.List` | Lock-derived entries |
 | `skit remove <name>` / `skit rm` | `app.Remove` | Removes lock entry and active symlink |
+| `skit gc` | `app.GC` | Prunes unreferenced store snapshots |
 | `skit update [name]` | `app.Update` | Refreshes locked sources |
 | `skit inspect <target>` | `app.Inspect` | Locked Skill or source |
 | `skit doctor` | `app.Doctor` | Lock, store, requirements, and warnings |
@@ -70,6 +71,9 @@ Flag rules:
 
 - `--project` is the default scope.
 - `--global` targets `~/.agent/skills`.
+- `--agent <names...>` also activates installed store snapshots in supported
+  agent directories, such as Codex `.agents/skills` or
+  `${CODEX_HOME:-~/.codex}/skills`.
 - `--skill <names...>` may appear once and only with one source.
 - Multiple sources use inline selectors such as `owner/repo@skill-name`.
 - `--skill` and `--all` are mutually exclusive.
@@ -111,10 +115,14 @@ Rules:
 - Store paths are immutable snapshots keyed by tree hash and Skill name.
 - Lock files do not record store paths.
 - Active entries are symlinks to store snapshots.
+- Agent-specific activations are additional symlinks to the same store
+  snapshots; lock files remain under skit's project/global active roots.
 - `skit install` with no sources verifies store entries and recreates active
   symlinks from `skit.lock`.
-- `skit remove` removes the lock entry and active symlink; store pruning is a
-  separate future command.
+- `skit remove` removes the lock entry and active symlink; `remove --prune`
+  deletes the removed snapshot only when no known lock references it.
+- `skit gc` prunes unreferenced store snapshots across known project and global
+  locks.
 
 ---
 
@@ -185,7 +193,8 @@ Network integration tests should remain opt-in.
 
 ## 8. Next Work
 
-- Add `skit tidy` or `skit store prune` for unreferenced store snapshots.
+- Add `skit tidy` for lock cleanup and active path reconciliation beyond store
+  garbage collection.
 - Document that `skills.sh` is a search/leaderboard service, not a publish
   target. GitHub releases do not automatically register Skills there; public
   listing currently appears tied to the `skills` CLI ecosystem and its
@@ -204,6 +213,7 @@ Network integration tests should remain opt-in.
   future registries may support version, digest, download, moderation, and
   security status.
 - Add registry/well-known provider support after search aggregation is stable.
-- Add release packaging after the CLI surface settles.
-- Consider agent-specific symlink helpers only if `.agent/skills` is not enough
-  for real workflows.
+- Maintain release distribution across GitHub Releases, installer checksums,
+  GoReleaser config, and the published Homebrew tap after each version bump.
+- Maintain the supported agent target table as upstream agent conventions
+  change.

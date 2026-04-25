@@ -139,6 +139,40 @@ func TestSearchJSON(t *testing.T) {
 	}
 }
 
+func TestSearchTextIsCompact(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+		  "skills": [
+		    {"id":"skill-creator","name":"skill-creator","source":"openclaw/openclaw","installs":42},
+		    {"id":"no-source","name":"fallback-skill","source":"","installs":0}
+		  ]
+		}`))
+	}))
+	defer server.Close()
+	t.Setenv("SKIT_SEARCH_API_URL", server.URL)
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"search", "skill", "create"}, &out, &errOut); code != 0 {
+		t.Fatalf("search code = %d, stderr = %q", code, errOut.String())
+	}
+	got := out.String()
+	if strings.Count(got, "Install with: skit install <source@skill>") != 1 {
+		t.Fatalf("install hint count wrong: %q", got)
+	}
+	if strings.Contains(got, "  skit install ") {
+		t.Fatalf("per-result install command still present: %q", got)
+	}
+	if !strings.Contains(got, "openclaw/openclaw@skill-creator\t42 installs\thttps://skills.sh/skill-creator") {
+		t.Fatalf("missing compact result line: %q", got)
+	}
+	if !strings.Contains(got, "no-source@fallback-skill\thttps://skills.sh/no-source") {
+		t.Fatalf("missing slug fallback result line: %q", got)
+	}
+}
+
 func TestDoctorJSONReturnsErrorStatus(t *testing.T) {
 	project := t.TempDir()
 	chdir(t, project)
