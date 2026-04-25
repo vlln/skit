@@ -14,28 +14,31 @@ used by skills-compatible agents.
 
 ## Installation
 
-Recommended: use `skit` for reproducible installs, sparse git subpath fetches,
-lock files, and requirement diagnostics. Other install methods are included for
-agents or workflows that do not use `skit`.
+Recommended: install these skills with `skit`. It fetches skills from the
+published repository, keeps a lock file, and can diagnose declared
+requirements.
 
 ### skit
 
-Install one skill:
+Install `skit` with Homebrew:
 
 ```sh
-skit install <owner>/<repo>/skills/<skill-name>
+brew install --cask vlln/tap/skit
 ```
 
-Install globally:
+For other platforms, see the
+[skit installation instructions](https://github.com/vlln/skit#installation).
+
+Install one skill:
 
 ```sh
 skit install --global <owner>/<repo>/skills/<skill-name>
 ```
 
-Install all discoverable skills:
+Install all skills in this repository:
 
 ```sh
-skit install <owner>/<repo> --all
+skit install --global <owner>/<repo> --all
 ```
 
 ### npx skills

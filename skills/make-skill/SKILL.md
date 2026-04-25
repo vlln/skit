@@ -147,6 +147,15 @@ mechanics there, such as when the agent should read `references/`, how helper
 scripts are invoked, or detailed implementation rules. Put that operational
 guidance in the relevant `SKILL.md`.
 
+In the Installation section, show how to install `skit` first. Prefer a package
+manager command and a link to the skit installation instructions over
+curl-piped-to-shell snippets. Then show published repository install commands
+such as
+`skit install --global <owner>/<repo>/skills/<skill-name>` or
+`skit install --global <owner>/<repo> --all`. Do not use local checkout examples
+such as `skit install .`, and do not turn the README into a full skit command
+manual.
+
 Do not add a README inside an individual skill directory unless the user asks
 for one or the skill needs human-facing package documentation.
 
