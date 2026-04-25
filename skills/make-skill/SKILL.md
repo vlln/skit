@@ -1,6 +1,6 @@
 ---
 name: make-skill
-description: Create or revise Agent Skills with precise SKILL.md frontmatter, concise task-specific instructions, validation checks, and skit-friendly metadata. Use when the user asks to make, draft, improve, package, review, or standardize a skill.
+description: Create or revise an Agent Skills repository with one or more skills under skills/, precise SKILL.md frontmatter, concise task-specific instructions, validation checks, and skit-friendly metadata. Use when the user asks to make, draft, improve, package, review, or standardize a skill repo or skill collection.
 license: MIT
 compatibility: Agent Skills SKILL.md format; optimized for skit-managed skill repositories.
 metadata:
@@ -14,32 +14,35 @@ metadata:
 
 # Make Skill
 
-Use this skill to create or improve an Agent Skill. Produce a small, concrete
-skill package, not a generic tutorial.
+Use this skill to create or improve an Agent Skills repository. Produce a small,
+concrete repository with one or more focused skills under `skills/`, not a
+generic tutorial.
 
 ## Naming
 
-Prefer short command-like names:
+Prefer short command-like skill names:
 
 - lowercase letters, numbers, and hyphens only
 - 1-64 characters
 - no leading, trailing, or repeated hyphens
-- directory name must match `name`
+- each skill directory name must match its `name`
 
 Use `make-skill` for this skill. It is short, imperative, and Unix-like.
 
 ## Workflow
 
-1. Identify the recurring task the skill should help with.
-2. Ask only for missing domain-specific facts that would change the skill.
-3. Choose a narrow scope. If the request contains multiple domains, split them.
-4. Create `skills/<skill-name>/SKILL.md` for a repo-level skill collection, or
-   `<skill-name>/SKILL.md` for a standalone skill directory.
-5. Add `scripts/`, `references/`, or `assets/` only when they remove real
-   repetition or keep `SKILL.md` concise.
-6. For a repo-level skill collection, create or update the root `README.md`
-   from `assets/README.template.md`.
-7. Validate frontmatter, trigger description, body constraints, and examples.
+1. Identify the repository's domain and the recurring tasks it should cover.
+2. Ask only for missing domain-specific facts that would change the repository
+   structure or public skill list.
+3. Split the domain into one or more focused skills. Do not force everything
+   into a single skill when separate activation triggers would be clearer.
+4. Create `skills/<skill-name>/SKILL.md` for each public skill.
+5. Add per-skill `scripts/`, `references/`, or `assets/` only when they remove
+   real repetition or keep that skill's `SKILL.md` concise.
+6. Create or update the repository root `README.md` from
+   `assets/README.template.md`.
+7. Validate every skill's frontmatter, trigger description, body constraints,
+   and examples.
 
 ## Frontmatter Template
 
@@ -81,7 +84,7 @@ Rules:
 
 ## Body Structure
 
-Keep `SKILL.md` focused on what the agent would not reliably know.
+Keep each `SKILL.md` focused on what the agent would not reliably know.
 
 Recommended sections:
 
@@ -138,21 +141,25 @@ When creating a repository that stores skills under `skills/`, use
 placeholders, keep only install methods that apply, and list every public skill
 in the `Skills` table.
 
-The README is repository-level documentation. Do not add a README inside an
-individual skill directory unless the user asks for one or the skill needs
-human-facing package documentation.
+The README is human-facing repository documentation for people deciding whether
+to use the skills and how to install them. Do not describe internal skill
+mechanics there, such as when the agent should read `references/`, how helper
+scripts are invoked, or detailed implementation rules. Put that operational
+guidance in the relevant `SKILL.md`.
+
+Do not add a README inside an individual skill directory unless the user asks
+for one or the skill needs human-facing package documentation.
 
 ## Validation Checklist
 
 Before finishing, check:
 
-- Directory name matches `name`.
-- Frontmatter parses as YAML.
-- `description` states when to use the skill and when not to.
+- Every skill directory name matches its `name`.
+- Every `SKILL.md` frontmatter parses as YAML.
+- Every `description` states when to use that skill and when not to.
 - Required tools/env/platforms are real and minimal.
-- The body is procedural, concise, and domain-specific.
+- Each skill body is procedural, concise, and domain-specific.
 - Any examples are runnable or clearly marked as templates.
+- The root README is human-facing and lists all public skills.
 - No generic filler remains.
-- If the skill is in a skit repo, `skit inspect ./skills/<skill-name>` succeeds
-  for repo-level collections, or `skit inspect ./<skill-name>` succeeds for a
-  standalone skill directory.
+- `skit inspect ./skills/<skill-name>` succeeds for every public skill.
