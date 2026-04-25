@@ -243,7 +243,7 @@ Lowercase `skill.md` is accepted for ecosystem interoperability and recorded as 
 
 ## Metadata
 
-`skit` reads standard frontmatter and `metadata.skit` extensions:
+`skit` reads standard `SKILL.md` frontmatter and `metadata.skit` extensions:
 
 ```yaml
 ---

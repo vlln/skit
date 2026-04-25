@@ -55,31 +55,9 @@ Common locations:
 - Claude Code: `.claude/skills` in the project, or the configured user skills directory
 - OpenCode: `~/.opencode/skills/<repo-name>`
 
-## Repository Layout
+## Requirements
 
-```text
-skills/
-  <skill-name>/
-    SKILL.md
-    assets/
-    references/
-    scripts/
-```
-
-Only `SKILL.md` is required. Add `assets/`, `references/`, or `scripts/` when
-they keep the skill concise or provide reusable support files.
-
-## Authoring Notes
-
-- Keep each `SKILL.md` focused on one recurring task.
-- Put large reference material in `references/`.
-- Put reusable templates or static files in `assets/`.
-- Put deterministic helper commands in `scripts/`.
-- Validate skills before publishing:
-
-```sh
-skit inspect ./skills/<skill-name>
-```
+<runtime, tool, account, or platform requirements. Remove this section if none.>
 
 ## License
 
