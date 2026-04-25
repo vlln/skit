@@ -19,8 +19,10 @@ If `skit` is missing, install it from the skit repository:
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/vlln/skit/main/install.sh
-sh install.sh
+less install.sh
 ```
+
+After reviewing the installer, follow its instructions if it is acceptable.
 
 Use release binaries or package manager installs when available. If working from a local checkout:
 

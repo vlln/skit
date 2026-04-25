@@ -39,6 +39,8 @@ var safetyPatterns = []struct {
 	},
 }
 
+var downloadedShellScriptPattern = regexp.MustCompile(`(?is)\b(curl|wget)\b[^\n]*\.sh.{0,1000}\b(sh|bash|zsh)\s+[\w./-]+\.sh\b`)
+
 func SafetyWarnings(root string) ([]string, error) {
 	var warnings []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
@@ -85,10 +87,26 @@ func SafetyWarnings(root string) ([]string, error) {
 				warnings = append(warnings, fmt.Sprintf("suspicious content in %s: %s", rel, pattern.code))
 			}
 		}
+		if downloadedShellScriptPattern.MatchString(text) && !mentionsChecksumVerification(text) {
+			warnings = append(warnings, fmt.Sprintf("suspicious content in %s: downloaded shell script executed without visible checksum verification", rel))
+		}
 		return nil
 	})
 	sort.Strings(warnings)
 	return dedupe(warnings), err
+}
+
+func mentionsChecksumVerification(text string) bool {
+	lower := strings.ToLower(text)
+	if !strings.Contains(lower, "checksum") && !strings.Contains(lower, "sha256") && !strings.Contains(lower, "shasum") {
+		return false
+	}
+	for _, token := range []string{"sha256sum", "shasum", "cosign", "minisign", "gpg"} {
+		if strings.Contains(lower, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func looksText(raw []byte) bool {
