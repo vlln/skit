@@ -33,8 +33,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runInstall(args[1:], stdout, stderr)
 	case "list", "ls":
 		return runList(args[1:], stdout, stderr)
-	case "remove", "rm":
+	case "remove", "rm", "uninstall":
 		return runRemove(args[1:], stdout, stderr)
+	case "gc":
+		return runGC(args[1:], stdout, stderr)
 	case "update":
 		return runUpdate(args[1:], stdout, stderr)
 	case "inspect":
@@ -62,7 +64,8 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "  search     Search for Skills")
 	fmt.Fprintln(w, "  install    Install sources or restore from lock")
 	fmt.Fprintln(w, "  list       List locked Skills")
-	fmt.Fprintln(w, "  remove     Remove a Skill from lock")
+	fmt.Fprintln(w, "  remove     Remove Skills from lock")
+	fmt.Fprintln(w, "  gc         Prune unreferenced store snapshots")
 	fmt.Fprintln(w, "  update     Refresh locked Skills from their sources")
 	fmt.Fprintln(w, "  inspect    Inspect a locked Skill or source")
 	fmt.Fprintln(w, "  doctor     Check lock, store, and declared requirements")
@@ -73,6 +76,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Common flags:")
 	fmt.Fprintln(w, "  --full-depth  Search recursively for Skills when installing a source")
+	fmt.Fprintln(w, "  --prune       With remove, delete unreferenced store snapshots")
 }
 
 func runSearch(args []string, stdout, stderr io.Writer) int {
@@ -81,8 +85,8 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit search:", err)
 		return 2
 	}
-	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth {
-		fmt.Fprintln(stderr, "skit search: --global, --skill, --all, --ignore-deps, and --full-depth are not supported")
+	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth || opts.prune {
+		fmt.Fprintln(stderr, "skit search: --global, --skill, --all, --ignore-deps, --full-depth, and --prune are not supported")
 		return 2
 	}
 	query := strings.TrimSpace(strings.Join(rest, " "))
@@ -198,7 +202,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 }
 
 func runRestore(opts commonOptions, stdout, stderr io.Writer) int {
-	if opts.all || len(opts.skills) > 0 || opts.ignoreDeps || opts.fullDepth || opts.noActive || opts.force {
+	if opts.all || len(opts.skills) > 0 || opts.ignoreDeps || opts.fullDepth || opts.noActive || opts.force || opts.prune {
 		fmt.Fprintln(stderr, "skit install: flags require at least one source")
 		return 2
 	}
@@ -229,6 +233,10 @@ func runList(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit list: unexpected arguments")
 		return 2
 	}
+	if opts.prune {
+		fmt.Fprintln(stderr, "skit list: --prune is not supported")
+		return 2
+	}
 	entries, err := app.List(app.ListRequest{CWD: cwd(), Scope: opts.scope})
 	if err != nil {
 		fmt.Fprintln(stderr, "skit list:", err)
@@ -256,20 +264,76 @@ func runRemove(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit remove:", err)
 		return 2
 	}
-	if len(rest) != 1 {
-		fmt.Fprintln(stderr, "skit remove: expected exactly one skill name")
+	if opts.all && len(rest) > 0 {
+		fmt.Fprintln(stderr, "skit remove: --all cannot be combined with skill names")
 		return 2
 	}
-	removed, err := app.Remove(app.RemoveRequest{CWD: cwd(), Scope: opts.scope, Name: rest[0]})
+	if !opts.all && len(rest) == 0 {
+		fmt.Fprintln(stderr, "skit remove: expected at least one skill name or --all")
+		return 2
+	}
+	names := rest
+	if opts.all {
+		entries, err := app.List(app.ListRequest{CWD: cwd(), Scope: opts.scope})
+		if err != nil {
+			fmt.Fprintln(stderr, "skit remove:", err)
+			return 1
+		}
+		for _, entry := range entries {
+			names = append(names, entry.Name)
+		}
+	}
+	exit := 0
+	for _, name := range names {
+		result, err := app.Remove(app.RemoveRequest{CWD: cwd(), Scope: opts.scope, Name: name, Prune: opts.prune})
+		if err != nil {
+			fmt.Fprintln(stderr, "skit remove:", err)
+			return 1
+		}
+		if !result.Removed {
+			fmt.Fprintf(stderr, "skit remove: %s is not installed\n", name)
+			exit = 1
+			continue
+		}
+		fmt.Fprintf(stdout, "removed %s\n", name)
+		for _, path := range result.Pruned {
+			fmt.Fprintf(stdout, "pruned %s\n", path)
+		}
+		for _, path := range result.Skipped {
+			fmt.Fprintf(stderr, "kept referenced store %s\n", path)
+		}
+	}
+	return exit
+}
+
+func runGC(args []string, stdout, stderr io.Writer) int {
+	opts, rest, err := parseCommon(args)
 	if err != nil {
-		fmt.Fprintln(stderr, "skit remove:", err)
+		fmt.Fprintln(stderr, "skit gc:", err)
+		return 2
+	}
+	if len(rest) != 0 {
+		fmt.Fprintln(stderr, "skit gc: unexpected arguments")
+		return 2
+	}
+	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth || opts.noActive || opts.force || opts.prune {
+		fmt.Fprintln(stderr, "skit gc: --global, --skill, --all, --ignore-deps, --full-depth, --no-active, --force, and --prune are not supported")
+		return 2
+	}
+	result, err := app.GC(app.GCRequest{CWD: cwd()})
+	if err != nil {
+		fmt.Fprintln(stderr, "skit gc:", err)
 		return 1
 	}
-	if !removed {
-		fmt.Fprintf(stderr, "skit remove: %s is not installed\n", rest[0])
-		return 1
+	if opts.json {
+		return writeJSON(stdout, stderr, result)
 	}
-	fmt.Fprintf(stdout, "removed %s\n", rest[0])
+	for _, path := range result.Pruned {
+		fmt.Fprintf(stdout, "pruned %s\n", path)
+	}
+	if len(result.Pruned) == 0 {
+		fmt.Fprintln(stdout, "nothing to prune")
+	}
 	return 0
 }
 
@@ -281,6 +345,10 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(rest) > 1 {
 		fmt.Fprintln(stderr, "skit update: expected zero or one skill name")
+		return 2
+	}
+	if opts.prune {
+		fmt.Fprintln(stderr, "skit update: --prune is not supported")
 		return 2
 	}
 	name := ""
@@ -321,6 +389,10 @@ func runInspect(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(rest) != 1 {
 		fmt.Fprintln(stderr, "skit inspect: expected exactly one skill name or source")
+		return 2
+	}
+	if opts.prune {
+		fmt.Fprintln(stderr, "skit inspect: --prune is not supported")
 		return 2
 	}
 	if len(opts.skills) > 1 {
@@ -380,6 +452,10 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit doctor: unexpected arguments")
 		return 2
 	}
+	if opts.prune {
+		fmt.Fprintln(stderr, "skit doctor: --prune is not supported")
+		return 2
+	}
 	result, err := app.Doctor(app.DoctorRequest{CWD: cwd(), Scope: opts.scope})
 	if err != nil {
 		fmt.Fprintln(stderr, "skit doctor:", err)
@@ -418,8 +494,8 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit init:", err)
 		return 2
 	}
-	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all {
-		fmt.Fprintln(stderr, "skit init: --global, --skill, and --all are not supported")
+	if opts.scope == app.Global || len(opts.skills) > 0 || opts.all || opts.prune {
+		fmt.Fprintln(stderr, "skit init: --global, --skill, --all, and --prune are not supported")
 		return 2
 	}
 	if len(rest) > 1 {
@@ -450,6 +526,10 @@ func runImportLock(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(rest) != 1 {
 		fmt.Fprintln(stderr, "skit import-lock: expected lock kind")
+		return 2
+	}
+	if opts.prune {
+		fmt.Fprintln(stderr, "skit import-lock: --prune is not supported")
 		return 2
 	}
 	result, err := app.ImportLock(app.ImportLockRequest{CWD: cwd(), Scope: opts.scope, Kind: rest[0]})
@@ -545,6 +625,7 @@ type commonOptions struct {
 	fullDepth  bool
 	noActive   bool
 	force      bool
+	prune      bool
 }
 
 func parseCommon(args []string) (commonOptions, []string, error) {
@@ -600,6 +681,8 @@ func parseCommon(args []string) (commonOptions, []string, error) {
 			opts.noActive = true
 		case "--force":
 			opts.force = true
+		case "--prune":
+			opts.prune = true
 		default:
 			if len(arg) > 0 && arg[0] == '-' {
 				return opts, nil, fmt.Errorf("unknown flag %s", arg)

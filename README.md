@@ -112,7 +112,9 @@ skit doctor
 skit install [source...]  Install sources, or restore from skit.lock
 skit search <query>       Search for Skills
 skit list                 List locked Skills
-skit remove <name>        Remove a locked and active Skill
+skit remove <name...>     Remove locked and active Skills
+skit uninstall <name...>  Alias for remove
+skit gc                   Prune unreferenced store snapshots
 skit update [name]        Refresh locked Skills from their sources
 skit inspect <target>     Inspect a locked Skill or source
 skit doctor               Check lock, store, hashes, and requirements
@@ -132,6 +134,7 @@ Common flags:
 --ignore-deps      Skip declared Skill dependencies
 --no-active        Write store/lock only; do not create active symlinks
 --force            Replace an existing non-symlink active path
+--prune            With remove, delete unreferenced store snapshots
 --json             Print JSON for supported commands
 ```
 

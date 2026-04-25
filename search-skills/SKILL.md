@@ -96,6 +96,8 @@ skit search "react testing"
 skit inspect vercel-labs/skills@find-skills
 skit install --global vercel-labs/skills@find-skills
 skit install
+skit uninstall --global find-skills
+skit gc
 skit update --global search-skills
 skit remove --global search-skills
 ```

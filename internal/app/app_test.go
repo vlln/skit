@@ -60,7 +60,7 @@ func TestLocalClosedLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !removed {
+	if !removed.Removed {
 		t.Fatal("remove returned false")
 	}
 	listed, err = List(ListRequest{CWD: project, Scope: Project})
@@ -95,6 +95,85 @@ func TestInstallRestoresMissingStoreFromLocalSource(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 	if _, err := os.Stat(added.StorePaths[0]); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemovePruneDeletesUnreferencedStore(t *testing.T) {
+	project := t.TempDir()
+	source := filepath.Join(project, "prune-demo")
+	writeSkill(t, source, "prune-demo")
+
+	added, err := Add(AddRequest{CWD: project, Scope: Project, Source: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Remove(RemoveRequest{CWD: project, Scope: Project, Name: "prune-demo", Prune: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Removed || len(result.Pruned) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if _, err := os.Stat(added.StorePaths[0]); !os.IsNotExist(err) {
+		t.Fatalf("store path still exists or stat failed: %v", err)
+	}
+}
+
+func TestRemovePruneKeepsStoreReferencedByAnotherProject(t *testing.T) {
+	projectA := t.TempDir()
+	projectB := t.TempDir()
+	source := filepath.Join(projectA, "shared-prune-demo")
+	writeSkill(t, source, "shared-prune-demo")
+
+	addedA, err := Add(AddRequest{CWD: projectA, Scope: Project, Source: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Add(AddRequest{CWD: projectB, Scope: Project, Source: source}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Remove(RemoveRequest{CWD: projectA, Scope: Project, Name: "shared-prune-demo", Prune: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Removed || len(result.Pruned) != 0 || len(result.Skipped) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	if _, err := os.Stat(addedA.StorePaths[0]); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGCPrunesOnlyUnreferencedStore(t *testing.T) {
+	project := t.TempDir()
+	keep := filepath.Join(project, "keep")
+	drop := filepath.Join(project, "drop")
+	writeSkill(t, keep, "keep")
+	writeSkill(t, drop, "drop")
+
+	kept, err := Add(AddRequest{CWD: project, Scope: Project, Source: keep})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropped, err := Add(AddRequest{CWD: project, Scope: Project, Source: drop})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Remove(RemoveRequest{CWD: project, Scope: Project, Name: "drop"}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := GC(GCRequest{CWD: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsText(result.Pruned, dropped.StorePaths[0]) {
+		t.Fatalf("gc result = %#v, dropped path = %s", result, dropped.StorePaths[0])
+	}
+	if _, err := os.Stat(dropped.StorePaths[0]); !os.IsNotExist(err) {
+		t.Fatalf("dropped store still exists or stat failed: %v", err)
+	}
+	if _, err := os.Stat(kept.StorePaths[0]); err != nil {
 		t.Fatal(err)
 	}
 }

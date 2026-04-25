@@ -215,6 +215,69 @@ func TestInstallIgnoreDepsCLI(t *testing.T) {
 	}
 }
 
+func TestRemoveMultipleAndUninstallAliasCLI(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	writeCLITestSkill(t, filepath.Join(project, "one"), "one")
+	writeCLITestSkill(t, filepath.Join(project, "two"), "two")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./one", "./two"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"uninstall", "one", "two"}, &out, &errOut); code != 0 {
+		t.Fatalf("remove code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "removed one") || !strings.Contains(out.String(), "removed two") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestRemovePruneCLI(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	writeCLITestSkill(t, filepath.Join(project, "prune-cli"), "prune-cli")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./prune-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"remove", "--prune", "prune-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("remove code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "removed prune-cli") || !strings.Contains(out.String(), "pruned ") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestGCCLI(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	writeCLITestSkill(t, filepath.Join(project, "gc-cli"), "gc-cli")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./gc-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"remove", "gc-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("remove code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"gc"}, &out, &errOut); code != 0 {
+		t.Fatalf("gc code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "pruned ") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
 func TestInstallOptionalDependencyWarningCLI(t *testing.T) {
 	project := t.TempDir()
 	chdir(t, project)
