@@ -8,6 +8,8 @@ builds:
     binary: skit
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X github.com/vlln/skit/internal/cli.version={{ .Version }}
     goos:
       - darwin
       - linux
