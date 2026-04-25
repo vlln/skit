@@ -1,0 +1,9 @@
+dist/
+bin/
+
+*.test
+*.out
+coverage.txt
+coverage.html
+
+.DS_Store
