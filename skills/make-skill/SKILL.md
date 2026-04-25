@@ -33,10 +33,13 @@ Use `make-skill` for this skill. It is short, imperative, and Unix-like.
 1. Identify the recurring task the skill should help with.
 2. Ask only for missing domain-specific facts that would change the skill.
 3. Choose a narrow scope. If the request contains multiple domains, split them.
-4. Create `<skill-name>/SKILL.md`.
+4. Create `skills/<skill-name>/SKILL.md` for a repo-level skill collection, or
+   `<skill-name>/SKILL.md` for a standalone skill directory.
 5. Add `scripts/`, `references/`, or `assets/` only when they remove real
    repetition or keep `SKILL.md` concise.
-6. Validate frontmatter, trigger description, body constraints, and examples.
+6. For a repo-level skill collection, create or update the root `README.md`
+   from `assets/README.template.md`.
+7. Validate frontmatter, trigger description, body constraints, and examples.
 
 ## Frontmatter Template
 
@@ -128,6 +131,17 @@ Do not include:
 If detailed reference material is needed, put it in `references/` and tell the
 agent exactly when to read it.
 
+## Repository README
+
+When creating a repository that stores skills under `skills/`, use
+`assets/README.template.md` as the root `README.md` starting point. Replace all
+placeholders, keep only install methods that apply, and list every public skill
+in the `Skills` table.
+
+The README is repository-level documentation. Do not add a README inside an
+individual skill directory unless the user asks for one or the skill needs
+human-facing package documentation.
+
 ## Validation Checklist
 
 Before finishing, check:
@@ -139,4 +153,6 @@ Before finishing, check:
 - The body is procedural, concise, and domain-specific.
 - Any examples are runnable or clearly marked as templates.
 - No generic filler remains.
-- If the skill is in a skit repo, `skit inspect ./<skill-name>` succeeds.
+- If the skill is in a skit repo, `skit inspect ./skills/<skill-name>` succeeds
+  for repo-level collections, or `skit inspect ./<skill-name>` succeeds for a
+  standalone skill directory.
