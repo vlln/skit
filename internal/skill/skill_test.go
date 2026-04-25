@@ -132,6 +132,22 @@ func TestDiscoverFullDepthAddsDeepSkillWhenRootSkillExists(t *testing.T) {
 	}
 }
 
+func TestDiscoverChildSkillsUseChildBasename(t *testing.T) {
+	root := t.TempDir()
+	writeTestSkill(t, filepath.Join(root, "skills", "find-skills"), "find-skills")
+
+	skills, warnings, err := DiscoverWithOptions(root, ParseOptions{ExpectedBasename: "skills"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skills) != 1 || skills[0].Name != "find-skills" {
+		t.Fatalf("skills = %#v", skills)
+	}
+	if containsWarning(warnings, "does not match directory basename") || containsWarning(skills[0].Warnings, "does not match directory basename") {
+		t.Fatalf("warnings = %#v skill warnings = %#v", warnings, skills[0].Warnings)
+	}
+}
+
 func TestDiscoverPriorityAgentDirs(t *testing.T) {
 	root := t.TempDir()
 	writeTestSkill(t, filepath.Join(root, ".opencode", "skills", "opencode-skill"), "opencode-skill")

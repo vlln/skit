@@ -44,7 +44,7 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 		if !hasMarker(candidate) {
 			continue
 		}
-		s, err := ParseDirWithOptions(candidate, opts)
+		s, err := ParseDirWithOptions(candidate, childParseOptions(opts))
 		if err != nil {
 			return nil, warnings, err
 		}
@@ -68,7 +68,7 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 			if !hasMarker(candidate) {
 				continue
 			}
-			s, err := ParseDirWithOptions(candidate, opts)
+			s, err := ParseDirWithOptions(candidate, childParseOptions(opts))
 			if err != nil {
 				return nil, warnings, err
 			}
@@ -88,6 +88,11 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 		}
 	}
 	return skills, warnings, nil
+}
+
+func childParseOptions(opts ParseOptions) ParseOptions {
+	opts.ExpectedBasename = ""
+	return opts
 }
 
 type DuplicateNameError struct {
