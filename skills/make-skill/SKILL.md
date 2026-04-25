@@ -148,9 +148,11 @@ mechanics there, such as when the agent should read `references/`, how helper
 scripts are invoked, or detailed implementation rules. Put that operational
 guidance in the relevant `SKILL.md`.
 
-In the Installation section, show how to install `skit` first. Prefer a package
-manager command and a link to the skit installation instructions over
-curl-piped-to-shell snippets. Then show published repository install commands
+In the Installation section, start from the template's `skit` block and preserve
+the exact skit project link `https://github.com/vlln/skit`. Do not infer or
+substitute another skit repository owner. Show a concrete package-manager
+install command before linking to other platform instructions; do not only say
+"see installation instructions". Then show published repository install commands
 such as
 `skit install --global <owner>/<repo>/skills/<skill-name>` or
 `skit install --global <owner>/<repo> --all`. Do not use local checkout examples

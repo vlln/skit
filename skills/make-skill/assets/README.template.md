@@ -14,9 +14,9 @@ used by skills-compatible agents.
 
 ## Installation
 
-Recommended: install these skills with `skit`. It fetches skills from the
-published repository, keeps a lock file, and can diagnose declared
-requirements.
+Recommended: install these skills with
+[`skit`](https://github.com/vlln/skit). It fetches skills from the published
+repository, keeps a lock file, and can diagnose declared requirements.
 
 ### skit
 
@@ -27,7 +27,7 @@ brew install --cask vlln/tap/skit
 ```
 
 For other platforms, see the
-[skit installation instructions](https://github.com/vlln/skit#installation).
+[`skit` installation instructions](https://github.com/vlln/skit#installation).
 
 Install one skill:
 
