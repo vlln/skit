@@ -18,7 +18,7 @@ var safetyPatterns = []struct {
 	re   *regexp.Regexp
 }{
 	{
-		code: "curl/wget piped to shell",
+		code: "curl/wget piped to shell; consider downloading the script, inspecting it, then running it explicitly",
 		re:   regexp.MustCompile(`(?i)\b(curl|wget)\b[^\n|;&]*\|[^\n]*(sh|bash|zsh)\b`),
 	},
 	{

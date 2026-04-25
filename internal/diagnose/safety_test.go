@@ -18,6 +18,9 @@ func TestSafetyWarningsDetectsCurlPipedToShell(t *testing.T) {
 	if !containsWarning(warnings, "curl/wget piped to shell") {
 		t.Fatalf("warnings = %#v", warnings)
 	}
+	if !containsWarning(warnings, "consider downloading the script, inspecting it, then running it explicitly") {
+		t.Fatalf("warnings = %#v", warnings)
+	}
 }
 
 func TestSafetyWarningsDetectsDownloadedShellScriptExecution(t *testing.T) {
