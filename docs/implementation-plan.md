@@ -70,7 +70,7 @@ Implemented public commands:
 Flag rules:
 
 - `--project` is the default scope.
-- `--global` targets `~/.agent/skills`.
+- `--global` targets `~/.agents/skills`.
 - `--agent <names...>` also activates installed store snapshots in supported
   agent directories, such as Codex `.agents/skills` or
   `${CODEX_HOME:-~/.codex}/skills`.
@@ -99,15 +99,15 @@ ${XDG_CACHE_HOME:-~/.cache}/skit/tmp/
 Project scope:
 
 ```text
-.agent/skills/<skill-name>  -> symlink to global store snapshot
-.agent/skills/skit.lock
+.agents/skills/<skill-name>  -> symlink to global store snapshot
+.agents/skills/skit.lock
 ```
 
 Global scope:
 
 ```text
-~/.agent/skills/<skill-name> -> symlink to global store snapshot
-~/.agent/skills/skit.lock
+~/.agents/skills/<skill-name> -> symlink to global store snapshot
+~/.agents/skills/skit.lock
 ```
 
 Rules:

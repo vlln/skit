@@ -423,7 +423,7 @@ File hash rules:
 Path:
 
 ```text
-.agent/skills/skit.lock
+.agents/skills/skit.lock
 ```
 
 Purpose:
@@ -529,7 +529,7 @@ Write rules:
 Path:
 
 ```text
-~/.agent/skills/skit.lock
+~/.agents/skills/skit.lock
 ```
 
 Purpose:
@@ -540,8 +540,8 @@ Purpose:
 
 ### Active Skills
 
-Project scope activates Skills under `.agent/skills/<skill-name>`.
-Global scope activates Skills under `~/.agent/skills/<skill-name>`.
+Project scope activates Skills under `.agents/skills/<skill-name>`.
+Global scope activates Skills under `~/.agents/skills/<skill-name>`.
 
 Active entries are symlinks to immutable global store snapshots. Existing
 symlinks may be replaced when the selected snapshot changes. Existing
@@ -586,7 +586,7 @@ Behavior:
 13. If `--agent` is set, also create symlinks to the same store snapshots in
     the selected agent directories.
 
-`skit install --global` never modifies project `.agent/skills/skit.lock`.
+`skit install --global` never modifies project `.agents/skills/skit.lock`.
 
 `skit install` writes the relevant lock file, stores immutable snapshots, and
 activates selected Skills via symlinks into the active root.
@@ -634,12 +634,12 @@ Behavior:
 
 ### `skit install` Restore Mode
 
-With no source arguments, restores project Skills from `.agent/skills/skit.lock`.
-With `--global`, restores global Skills from `~/.agent/skills/skit.lock`.
+With no source arguments, restores project Skills from `.agents/skills/skit.lock`.
+With `--global`, restores global Skills from `~/.agents/skills/skit.lock`.
 With `--agent`, also recreates selected agent symlinks from the same lock
 entries.
 
-If `.agent/skills/skit.lock` is absent, skit may read compatible existing lock files and suggest `skit import-lock`.
+If `.agents/skills/skit.lock` is absent, skit may read compatible existing lock files and suggest `skit import-lock`.
 
 Entries with `incomplete: true` are not restored automatically. `skit install` must report them and suggest installing from an explicit source or inspecting the Skill.
 
@@ -847,7 +847,7 @@ Install should warn on:
 
 ### Lock
 
-- Writes sorted `.agent/skills/skit.lock` for project scope.
+- Writes sorted `.agents/skills/skit.lock` for project scope.
 - Does not write timestamps into project lock.
 - Does not write Agent targets.
 - Records `source.skill` when a Skill selector is needed.
@@ -942,7 +942,7 @@ Install should warn on:
 - `metadata.clawhub` is not a v1 ClawHub/OpenClaw namespace.
 - v1 provider scope is `local`, `github`, `gitlab`, and generic `git`. Registry and well-known providers are recognized but remain future work.
 - `owner/repo@skill-name`, `github:owner/repo@skill-name`, and `source#ref@skill-name` are supported inline selectors; `--skill <name...>` is the preferred non-ambiguous selector for one source.
-- v1 activates Skills via `.agent/skills` symlinks to immutable global store snapshots.
+- v1 activates Skills via `.agents/skills` project symlinks and `~/.agents/skills` global symlinks to immutable global store snapshots.
 - v1 store paths use `$XDG_DATA_HOME/skit/store/<hashes.tree>/<skill-name>/`.
 - v1 rejects same-name different-origin lock conflicts.
 - v1 Skill discovery scans source root, direct children, common Skill roots, and falls back to depth-limited recursive discovery when needed. `--full-depth` forces recursive discovery.

@@ -14,7 +14,7 @@ diagnose declared local requirements.
 
 - Standards-oriented `SKILL.md` parsing with ecosystem metadata.
 - Content-addressed global store under XDG data directories.
-- Project and global activation via `.agent/skills` symlinks.
+- Project activation via `.agents/skills` and global activation via `~/.agents/skills`.
 - Deterministic `skit.lock` files stored next to active Skills.
 - Local, GitHub, GitLab, SSH git, and generic git source parsing/fetching.
 - Dependency locking for `metadata.skit.dependencies`.
@@ -203,15 +203,15 @@ skit install owner/repo@skill-one other/repo@skill-two
 Project scope:
 
 ```text
-.agent/skills/<skill-name>  -> symlink to global store snapshot
-.agent/skills/skit.lock     deterministic project lock
+.agents/skills/<skill-name>  -> symlink to global store snapshot
+.agents/skills/skit.lock     deterministic project lock
 ```
 
 Global scope:
 
 ```text
-~/.agent/skills/<skill-name> -> symlink to global store snapshot
-~/.agent/skills/skit.lock    deterministic global lock
+~/.agents/skills/<skill-name> -> symlink to global store snapshot
+~/.agents/skills/skit.lock    deterministic global lock
 ```
 
 Store and temporary files:

@@ -39,14 +39,17 @@ func TestLocalClosedLoop(t *testing.T) {
 	if len(added.Entries) != 1 {
 		t.Fatalf("entries = %#v", added.Entries)
 	}
-	if _, err := os.Stat(filepath.Join(project, ".agent", "skills", "skit.lock")); err != nil {
+	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "skit.lock")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(added.StorePaths[0]); err != nil {
 		t.Fatal(err)
 	}
-	if info, err := os.Lstat(filepath.Join(project, ".agent", "skills", "demo")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+	if info, err := os.Lstat(filepath.Join(project, ".agents", "skills", "demo")); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(project, ".agent", "skills", "demo")); !os.IsNotExist(err) {
+		t.Fatalf("legacy project active symlink should not exist: %v", err)
 	}
 
 	listed, err := List(ListRequest{CWD: project, Scope: Project})
@@ -71,7 +74,7 @@ func TestLocalClosedLoop(t *testing.T) {
 	if len(listed) != 0 {
 		t.Fatalf("listed after remove = %#v", listed)
 	}
-	if _, err := os.Lstat(filepath.Join(project, ".agent", "skills", "demo")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(project, ".agents", "skills", "demo")); !os.IsNotExist(err) {
 		t.Fatalf("active symlink still exists after remove: %v", err)
 	}
 }
@@ -91,8 +94,36 @@ func TestAddActivatesCodexProjectAgent(t *testing.T) {
 	if info, err := os.Lstat(filepath.Join(project, ".agents", "skills", "demo")); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("codex active symlink missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(project, ".agent", "skills", "skit.lock")); err != nil {
+	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "skit.lock")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAddGlobalUsesAgentsPluralRoot(t *testing.T) {
+	project := t.TempDir()
+	source := filepath.Join(project, "global-demo")
+	writeSkill(t, source, "global-demo")
+
+	added, err := Add(AddRequest{CWD: project, Scope: Global, Source: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".agents", "skills", "global-demo")
+	if !containsText(added.ActivePaths, want) {
+		t.Fatalf("active paths = %#v, want %s", added.ActivePaths, want)
+	}
+	if info, err := os.Lstat(want); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("global active symlink missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "skit.lock")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".agent", "skills", "global-demo")); !os.IsNotExist(err) {
+		t.Fatalf("legacy global active symlink should not exist: %v", err)
 	}
 }
 
@@ -414,7 +445,7 @@ func TestUpdateGitHubSourceWithLocalGitRepo(t *testing.T) {
 		},
 		Hashes: lockfile.Hashes{Tree: "sha256-old", SkillMD: "sha256-old"},
 	}
-	if err := lockfile.Write(filepath.Join(project, ".agent", "skills", "skit.lock"), lock); err != nil {
+	if err := lockfile.Write(filepath.Join(project, ".agents", "skills", "skit.lock"), lock); err != nil {
 		t.Fatal(err)
 	}
 
@@ -467,7 +498,7 @@ func TestUpdateGenericGitSourceWithLocalGitRepo(t *testing.T) {
 		},
 		Hashes: lockfile.Hashes{Tree: "sha256-old", SkillMD: "sha256-old"},
 	}
-	if err := lockfile.Write(filepath.Join(project, ".agent", "skills", "skit.lock"), lock); err != nil {
+	if err := lockfile.Write(filepath.Join(project, ".agents", "skills", "skit.lock"), lock); err != nil {
 		t.Fatal(err)
 	}
 

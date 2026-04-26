@@ -31,7 +31,7 @@ func PathsFor(scope Scope, cwd string) Paths {
 	storeRoot := filepath.Join(xdg.DataHome(), "skit", "store")
 	tmpRoot := filepath.Join(xdg.CacheHome(), "skit", "tmp")
 	if scope == Global {
-		active := filepath.Join(userHome(), ".agent", "skills")
+		active := filepath.Join(userHome(), ".agents", "skills")
 		return Paths{
 			Root:   storeRoot,
 			Lock:   filepath.Join(active, "skit.lock"),
@@ -39,7 +39,7 @@ func PathsFor(scope Scope, cwd string) Paths {
 			Active: active,
 		}
 	}
-	active := filepath.Join(cwd, ".agent", "skills")
+	active := filepath.Join(cwd, ".agents", "skills")
 	return Paths{
 		Root:   storeRoot,
 		Lock:   filepath.Join(active, "skit.lock"),
