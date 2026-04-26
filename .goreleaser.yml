@@ -34,12 +34,15 @@ archives:
 checksum:
   name_template: checksums.txt
 
-homebrew_casks:
+brews:
   - name: skit
     ids:
       - default
-    binaries:
-      - skit
+    directory: Formula
+    dependencies:
+      - name: git
+    test: |
+      system "#{bin}/skit", "version"
     repository:
       owner: vlln
       name: homebrew-tap

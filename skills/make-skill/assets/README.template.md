@@ -31,7 +31,7 @@ repository, keeps a lock file, and can diagnose declared requirements.
 Install `skit` with Homebrew:
 
 ```sh
-brew install --cask vlln/tap/skit
+brew install vlln/tap/skit
 ```
 
 For other platforms, see the
