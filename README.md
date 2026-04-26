@@ -36,6 +36,18 @@ curl -fsSL https://raw.githubusercontent.com/vlln/skit/main/install.sh | sh
 
 The installer detects the platform, downloads the matching release asset,
 verifies checksums, and places `skit` in `~/.local/bin` or `SKIT_INSTALL_DIR`.
+Downloads fail instead of hanging indefinitely: by default the installer uses a
+10s connect timeout, 300s total transfer timeout, 30s low-speed timeout, and 3
+retries. These can be adjusted with `SKIT_CONNECT_TIMEOUT`, `SKIT_MAX_TIME`,
+`SKIT_SPEED_LIMIT`, `SKIT_SPEED_TIME`, and `SKIT_RETRY`.
+
+For restricted networks, point the installer at a release mirror or pre-staged
+asset directory with `SKIT_DOWNLOAD_BASE`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/vlln/skit/main/install.sh |
+  SKIT_DOWNLOAD_BASE=https://example.com/skit/releases/v0.2.0 sh
+```
 
 Package-manager distribution can layer on top of the same release artifacts:
 
