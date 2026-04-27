@@ -10,6 +10,7 @@ import (
 
 	"github.com/vlln/skit/internal/app"
 	"github.com/vlln/skit/internal/lockfile"
+	"github.com/vlln/skit/internal/updatecheck"
 )
 
 var version = "0.1.0-dev"
@@ -25,6 +26,13 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		printHelp(stdout)
 		return 0
 	case "version", "--version", "-v":
+		if len(args) > 1 && args[1] == "--check" {
+			return runVersionCheck(stdout, stderr)
+		}
+		if len(args) > 1 {
+			fmt.Fprintf(stderr, "skit version: unknown argument %q\n", args[1])
+			return 2
+		}
 		fmt.Fprintf(stdout, "skit %s\n", version)
 		return 0
 	case "search", "find":
@@ -72,7 +80,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "  init         Create a SKILL.md template")
 	fmt.Fprintln(w, "  import-lock  Import a compatible lock file")
 	fmt.Fprintln(w, "  help         Show help")
-	fmt.Fprintln(w, "  version      Show version")
+	fmt.Fprintln(w, "  version      Show version; use --check to check for updates")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Common flags:")
 	fmt.Fprintln(w, "  --project       Use project scope (default)")
@@ -187,28 +195,69 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 		}
 		printAddResult(stdout, stderr, result)
 	}
+	maybePrintUpdate(stderr)
 	return 0
 }
 
 func printAddResult(stdout, stderr io.Writer, result app.AddResult) {
-	for i, entry := range result.DependencyEntries {
+	for _, entry := range result.DependencyEntries {
 		fmt.Fprintf(stdout, "added dependency %s %s\n", entry.Name, entry.Hashes.Tree)
-		if i < len(result.DependencyStorePaths) {
-			fmt.Fprintf(stdout, "store %s\n", result.DependencyStorePaths[i])
-		}
 	}
-	for i, entry := range result.Entries {
+	for _, entry := range result.Entries {
 		fmt.Fprintf(stdout, "added %s %s\n", entry.Name, entry.Hashes.Tree)
-		if i < len(result.StorePaths) {
-			fmt.Fprintf(stdout, "store %s\n", result.StorePaths[i])
-		}
 	}
-	for _, warning := range result.Warnings {
+	for _, warning := range compactWarnings(result.Warnings) {
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}
 	for _, path := range result.ActivePaths {
 		fmt.Fprintf(stdout, "active %s\n", path)
 	}
+}
+
+func compactWarnings(warnings []string) []string {
+	const executablePrefix = "executable file in Skill directory: "
+	var out []string
+	var executable []string
+	seen := map[string]bool{}
+	for _, warning := range warnings {
+		if strings.HasPrefix(warning, executablePrefix) {
+			executable = append(executable, strings.TrimPrefix(warning, executablePrefix))
+			continue
+		}
+		if !seen[warning] {
+			out = append(out, warning)
+			seen[warning] = true
+		}
+	}
+	if len(executable) == 1 {
+		out = append(out, executablePrefix+executable[0])
+	} else if len(executable) > 1 {
+		out = append(out, fmt.Sprintf("%d executable files in Skill directory: %s", len(executable), strings.Join(executable, ", ")))
+	}
+	return out
+}
+
+func runVersionCheck(stdout, stderr io.Writer) int {
+	fmt.Fprintf(stdout, "skit %s\n", version)
+	result, err := updatecheck.Check(context.Background(), updatecheck.Request{Current: version, Force: true})
+	if err != nil {
+		fmt.Fprintln(stderr, "skit version:", err)
+		return 1
+	}
+	if result.Available {
+		fmt.Fprintln(stderr, updatecheck.Message(result))
+	} else {
+		fmt.Fprintln(stdout, "skit is up to date")
+	}
+	return 0
+}
+
+func maybePrintUpdate(stderr io.Writer) {
+	result, err := updatecheck.Check(context.Background(), updatecheck.Request{Current: version})
+	if err != nil || !result.Available {
+		return
+	}
+	fmt.Fprintln(stderr, updatecheck.Message(result))
 }
 
 func runInstall(args []string, stdout, stderr io.Writer) int {
@@ -385,21 +434,16 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	if opts.json {
 		return writeJSON(stdout, stderr, result)
 	}
-	for i, entry := range result.DependencyEntries {
+	for _, entry := range result.DependencyEntries {
 		fmt.Fprintf(stdout, "updated dependency %s %s\n", entry.Name, entry.Hashes.Tree)
-		if i < len(result.DependencyStorePaths) {
-			fmt.Fprintf(stdout, "store %s\n", result.DependencyStorePaths[i])
-		}
 	}
-	for i, entry := range result.Entries {
+	for _, entry := range result.Entries {
 		fmt.Fprintf(stdout, "updated %s %s\n", entry.Name, entry.Hashes.Tree)
-		if i < len(result.StorePaths) {
-			fmt.Fprintf(stdout, "store %s\n", result.StorePaths[i])
-		}
 	}
-	for _, warning := range result.Warnings {
+	for _, warning := range compactWarnings(result.Warnings) {
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}
+	maybePrintUpdate(stderr)
 	return 0
 }
 

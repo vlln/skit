@@ -50,6 +50,31 @@ func TestRunVersion(t *testing.T) {
 	}
 }
 
+func TestRunVersionCheckReportsUpdate(t *testing.T) {
+	oldVersion := version
+	version = "0.1.0"
+	t.Cleanup(func() { version = oldVersion })
+	t.Setenv("SKIT_UPDATE_CHECK_CACHE", filepath.Join(t.TempDir(), "update-check.json"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v0.2.0","html_url":"https://example.com/skit/releases/v0.2.0"}`))
+	}))
+	defer server.Close()
+	t.Setenv("SKIT_UPDATE_CHECK_URL", server.URL)
+
+	var out, err bytes.Buffer
+	code := Run([]string{"version", "--check"}, &out, &err)
+	if code != 0 {
+		t.Fatalf("code = %d, stderr = %q", code, err.String())
+	}
+	if !strings.Contains(out.String(), "skit 0.1.0") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+	if !strings.Contains(err.String(), "update available: skit v0.2.0 is available") {
+		t.Fatalf("stderr = %q", err.String())
+	}
+}
+
 func TestUnknownFlagErrors(t *testing.T) {
 	var out, err bytes.Buffer
 	code := Run([]string{"install", "--skil", "demo", "./demo"}, &out, &err)
@@ -245,6 +270,58 @@ func TestInstallIgnoreDepsCLI(t *testing.T) {
 		t.Fatalf("stdout = %q", out.String())
 	}
 	if !strings.Contains(errOut.String(), "dependencies skipped for parent") {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+}
+
+func TestInstallTextOutputIsCompact(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	skillDir := filepath.Join(project, "demo")
+	writeCLITestSkill(t, skillDir, "demo")
+	scripts := filepath.Join(skillDir, "scripts")
+	if err := os.MkdirAll(scripts, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"one.sh", "two.sh"} {
+		path := filepath.Join(scripts, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	if strings.Contains(out.String(), "\nstore ") {
+		t.Fatalf("stdout should not print store path by default: %q", out.String())
+	}
+	if strings.Count(errOut.String(), "executable file") != 1 || !strings.Contains(errOut.String(), "2 executable files in Skill directory") {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+}
+
+func TestInstallAutomaticallyChecksForUpdate(t *testing.T) {
+	oldVersion := version
+	version = "0.1.0"
+	t.Cleanup(func() { version = oldVersion })
+	project := t.TempDir()
+	chdir(t, project)
+	t.Setenv("SKIT_UPDATE_CHECK_CACHE", filepath.Join(t.TempDir(), "update-check.json"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v0.2.0","html_url":"https://example.com/skit/releases/v0.2.0"}`))
+	}))
+	defer server.Close()
+	t.Setenv("SKIT_UPDATE_CHECK_URL", server.URL)
+	writeCLITestSkill(t, filepath.Join(project, "demo"), "demo")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "update available: skit v0.2.0 is available") {
 		t.Fatalf("stderr = %q", errOut.String())
 	}
 }

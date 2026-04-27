@@ -46,7 +46,7 @@ asset directory with `SKIT_DOWNLOAD_BASE`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/vlln/skit/main/install.sh |
-  SKIT_DOWNLOAD_BASE=https://example.com/skit/releases/v0.2.0 sh
+  SKIT_DOWNLOAD_BASE=https://example.com/skit/releases/<version> sh
 ```
 
 Package-manager distribution can layer on top of the same release artifacts:
@@ -165,6 +165,7 @@ skit doctor               Check lock, store, hashes, and requirements
 skit init [name]          Create a SKILL.md template
 skit import-lock <kind>   Import a compatible lock file
 skit version              Print the CLI version
+skit version --check      Check GitHub Releases for a newer skit version
 ```
 
 Common flags:
@@ -197,6 +198,10 @@ names for one source. For multiple sources, use inline selectors:
 ```sh
 skit install owner/repo@skill-one other/repo@skill-two
 ```
+
+`skit install` and `skit update` check for newer skit releases at most once per
+day and print a short update hint when one is available. Set
+`SKIT_UPDATE_CHECK=0` to disable the automatic check.
 
 ## Paths
 
