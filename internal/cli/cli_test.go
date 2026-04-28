@@ -34,8 +34,36 @@ func TestRunHelp(t *testing.T) {
 	if !strings.Contains(out.String(), "Usage:") {
 		t.Fatalf("help output missing usage: %q", out.String())
 	}
+	if !strings.Contains(out.String(), "Skill Kit (Skill management CLI)") {
+		t.Fatalf("help output missing product name: %q", out.String())
+	}
 	if err.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", err.String())
+	}
+}
+
+func TestRunCommandHelp(t *testing.T) {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"help", "remove"}, "Store snapshots are kept by default"},
+		{[]string{"gc", "--help"}, "Garbage collect the shared content-addressed store"},
+		{[]string{"update", "-h"}, "Incomplete imported entries are skipped"},
+		{[]string{"import-lock", "help"}, "Supported kinds:"},
+	}
+	for _, tt := range tests {
+		var out, err bytes.Buffer
+		code := Run(tt.args, &out, &err)
+		if code != 0 {
+			t.Fatalf("Run(%v) code = %d, stderr = %q", tt.args, code, err.String())
+		}
+		if !strings.Contains(out.String(), tt.want) {
+			t.Fatalf("Run(%v) output missing %q:\n%s", tt.args, tt.want, out.String())
+		}
+		if err.Len() != 0 {
+			t.Fatalf("Run(%v) stderr = %q, want empty", tt.args, err.String())
+		}
 	}
 }
 
@@ -106,6 +134,61 @@ func TestListJSON(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Name != "demo" {
 		t.Fatalf("entries = %#v", entries)
+	}
+}
+
+func TestListStoreCLI(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	writeCLITestSkill(t, filepath.Join(project, "store-cli"), "store-cli")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./store-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"list", "--store"}, &out, &errOut); code != 0 {
+		t.Fatalf("list --store code = %d, stderr = %q", code, errOut.String())
+	}
+	fields := strings.Fields(out.String())
+	if len(fields) < 3 {
+		t.Fatalf("list --store output = %q", out.String())
+	}
+	if !strings.Contains(out.String(), "NAME") || !strings.Contains(out.String(), "TREE") || !strings.Contains(out.String(), "USE") {
+		t.Fatalf("list --store output missing header: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "store-cli") || !strings.Contains(out.String(), "active,locked") {
+		t.Fatalf("list --store output = %q", out.String())
+	}
+	if strings.Contains(out.String(), ".local/share/skit/store") {
+		t.Fatalf("list --store should not print fixed store path: %q", out.String())
+	}
+	for _, field := range fields {
+		if strings.HasPrefix(field, "sha256-") {
+			t.Fatalf("list --store should not print hash algorithm prefix %q in %q", field, out.String())
+		}
+		if strings.Contains(field, "sha256-") {
+			t.Fatalf("list --store should not print hash algorithm prefix in %q", out.String())
+		}
+	}
+
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"list", "--store", "--global"}, &out, &errOut); code != 2 {
+		t.Fatalf("list --store --global code = %d, want 2", code)
+	}
+	if !strings.Contains(errOut.String(), "--global is not supported with --store") {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"list", "--store", "--locks", "store-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("list --store --locks code = %d, stderr = %q", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "LOCKS") || !strings.Contains(out.String(), "project") {
+		t.Fatalf("list --store --locks output = %q", out.String())
 	}
 }
 
@@ -195,6 +278,25 @@ func TestSearchTextIsCompact(t *testing.T) {
 	}
 	if !strings.Contains(got, "no-source@fallback-skill\thttps://skills.sh/no-source") {
 		t.Fatalf("missing slug fallback result line: %q", got)
+	}
+}
+
+func TestSearchSourceText(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	writeCLITestSkillWithBody(t, filepath.Join(project, "repo", "skills", "pdf-tools"), "---\nname: pdf-tools\ndescription: Extract PDF files.\n---\n# PDF tools\n")
+	writeCLITestSkillWithBody(t, filepath.Join(project, "repo", "skills", "deploy-tools"), "---\nname: deploy-tools\ndescription: Deploy services.\n---\n# Deploy tools\n")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"search", "pdf", "--source", "./repo"}, &out, &errOut); code != 0 {
+		t.Fatalf("search code = %d, stderr = %q", code, errOut.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "repo/skills/pdf-tools\tExtract PDF files.\tskills/pdf-tools") {
+		t.Fatalf("missing source result: %q", got)
+	}
+	if strings.Contains(got, "deploy-tools") {
+		t.Fatalf("unexpected unmatched skill: %q", got)
 	}
 }
 
@@ -346,6 +448,51 @@ func TestRemoveMultipleAndUninstallAliasCLI(t *testing.T) {
 	}
 }
 
+func TestListAndRemoveAgentLockCLI(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	writeCLITestSkill(t, filepath.Join(project, "agent-demo"), "agent-demo")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./agent-demo"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
+	}
+	raw, err := os.ReadFile(filepath.Join(project, ".agents", "skills", "skit.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claudeRoot := filepath.Join(project, ".claude", "skills")
+	if err := os.MkdirAll(claudeRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeRoot, "skit.lock"), raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"list", "--agent", "claude-code"}, &out, &errOut); code != 0 {
+		t.Fatalf("list --agent code = %d, stderr = %q", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "agent-demo") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"remove", "agent-demo", "--agent", "claude-code"}, &out, &errOut); code != 0 {
+		t.Fatalf("remove --agent code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"list", "--agent", "claude-code"}, &out, &errOut); code != 0 {
+		t.Fatalf("list --agent after remove code = %d, stderr = %q", code, errOut.String())
+	}
+	if strings.Contains(out.String(), "agent-demo") {
+		t.Fatalf("agent lock entry should be removed: %q", out.String())
+	}
+}
+
 func TestRemovePruneCLI(t *testing.T) {
 	project := t.TempDir()
 	chdir(t, project)
@@ -362,6 +509,38 @@ func TestRemovePruneCLI(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "removed prune-cli") || !strings.Contains(out.String(), "pruned ") {
 		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestRemoveStoreCLI(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+	writeCLITestSkill(t, filepath.Join(project, "store-rm-cli"), "store-rm-cli")
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"install", "./store-rm-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"remove", "store-rm-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("remove code = %d, stderr = %q", code, errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"remove", "--store", "store-rm-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("remove --store code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "removed store store-rm-cli ") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := Run([]string{"list", "--store", "store-rm-cli"}, &out, &errOut); code != 0 {
+		t.Fatalf("list --store code = %d, stderr = %q", code, errOut.String())
+	}
+	if strings.Contains(out.String(), "store-rm-cli") {
+		t.Fatalf("store entry should be removed: %q", out.String())
 	}
 }
 
@@ -480,6 +659,19 @@ func TestUpdateCommand(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "updated demo ") {
 		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestUpdateEmptyLockCLI(t *testing.T) {
+	project := t.TempDir()
+	chdir(t, project)
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"update"}, &out, &errOut); code != 1 {
+		t.Fatalf("update code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "no locked Skills to update") {
+		t.Fatalf("stderr = %q", errOut.String())
 	}
 }
 

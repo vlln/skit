@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,10 +12,11 @@ import (
 )
 
 type RemoveRequest struct {
-	CWD   string
-	Scope Scope
-	Name  string
-	Prune bool
+	CWD    string
+	Scope  Scope
+	Name   string
+	Prune  bool
+	Agents []string
 }
 
 type RemoveResult struct {
@@ -25,7 +27,10 @@ type RemoveResult struct {
 
 func Remove(req RemoveRequest) (RemoveResult, error) {
 	var result RemoveResult
-	paths := store.PathsFor(req.Scope, cleanCWD(req.CWD))
+	paths, err := pathsForLockRequest(req.Scope, cleanCWD(req.CWD), req.Agents)
+	if err != nil {
+		return result, err
+	}
 	lock, err := lockfile.Read(paths.Lock)
 	if err != nil {
 		return result, err
@@ -52,6 +57,78 @@ func Remove(req RemoveRequest) (RemoveResult, error) {
 		}
 	}
 	return result, nil
+}
+
+type RemoveStoreRequest struct {
+	CWD        string
+	Name       string
+	TreePrefix string
+}
+
+type RemoveStoreResult struct {
+	Removed bool   `json:"removed"`
+	Name    string `json:"name,omitempty"`
+	Tree    string `json:"tree,omitempty"`
+}
+
+func RemoveStore(req RemoveStoreRequest) (RemoveStoreResult, error) {
+	var result RemoveStoreResult
+	cwd := cleanCWD(req.CWD)
+	paths := store.PathsFor(Project, cwd)
+	entries, err := storeEntries(paths.Root)
+	if err != nil {
+		return result, err
+	}
+	var matches []storeEntry
+	for _, entry := range entries {
+		if entry.name != req.Name {
+			continue
+		}
+		if req.TreePrefix != "" && !matchesTreePrefix(entry.treeHash, req.TreePrefix) {
+			continue
+		}
+		matches = append(matches, entry)
+	}
+	if len(matches) == 0 {
+		return result, fmt.Errorf("store snapshot not found: %s", req.Name)
+	}
+	if len(matches) > 1 {
+		var trees []string
+		for _, entry := range matches {
+			trees = append(trees, shortTreeHash(entry.treeHash))
+		}
+		sort.Strings(trees)
+		return result, fmt.Errorf("multiple store snapshots match %s; specify tree prefix: %s", req.Name, strings.Join(trees, ", "))
+	}
+	entry := matches[0]
+	refs := referencedStoreKeys(cwd)
+	active := activeStoreKeys(cwd)
+	if refs[entry.key] || active[entry.key] {
+		return result, fmt.Errorf("store snapshot %s %s is %s; remove the lock or active link first", entry.name, shortTreeHash(entry.treeHash), strings.Join(storeUse(entry.key, refs, active), ","))
+	}
+	if err := os.RemoveAll(entry.path); err != nil {
+		return result, err
+	}
+	parent := filepath.Join(paths.Root, entry.treeHash)
+	if entries, err := os.ReadDir(parent); err == nil && len(entries) == 0 {
+		_ = os.Remove(parent)
+	}
+	return RemoveStoreResult{Removed: true, Name: entry.name, Tree: shortTreeHash(entry.treeHash)}, nil
+}
+
+func matchesTreePrefix(treeHash, prefix string) bool {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return true
+	}
+	if strings.HasPrefix(treeHash, prefix) {
+		return true
+	}
+	const algorithmPrefix = "sha256-"
+	if strings.HasPrefix(treeHash, algorithmPrefix) {
+		return strings.HasPrefix(strings.TrimPrefix(treeHash, algorithmPrefix), strings.TrimPrefix(prefix, algorithmPrefix))
+	}
+	return false
 }
 
 type GCRequest struct {
@@ -91,8 +168,10 @@ func GC(req GCRequest) (GCResult, error) {
 }
 
 type storeEntry struct {
-	key  string
-	path string
+	key      string
+	path     string
+	treeHash string
+	name     string
 }
 
 func storeEntries(root string) ([]storeEntry, error) {
@@ -120,8 +199,10 @@ func storeEntries(root string) ([]storeEntry, error) {
 			}
 			name := skillDir.Name()
 			out = append(out, storeEntry{
-				key:  storeKey(treeHash, name),
-				path: storePathFor(root, treeHash, name),
+				key:      storeKey(treeHash, name),
+				path:     storePathFor(root, treeHash, name),
+				treeHash: treeHash,
+				name:     name,
 			})
 		}
 	}

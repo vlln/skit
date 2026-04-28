@@ -458,11 +458,13 @@ v1 推荐命令语义：
 | `skit init [name]` | 创建 `SKILL.md` 模板 |
 | `skit doctor` | 检查 lockfile、系统依赖、环境变量 |
 | `skit inspect <source-or-name>` | 展示来源、hash、metadata、风险提示 |
-| `skit search <query>` / `skit find` | 后置版本：搜索 registry 或本地缓存 |
+| `skit search <query>` / `skit find` | 搜索默认远端 search provider |
+| `skit search <query> --source <repo-or-path>` | 一次性扫描某个 source；当前 source 可为 repo/local，未来可扩展 index/api |
 
 - v1 支持 `--global`、`--project`、`--skill`、`--yes`、`--all`。
 - `--skill` 只允许出现一次，但可跟多个用空格分隔的 skill name；只适用于单个 source。多个 source 使用 `owner/repo@skill` 这类 inline selector。
 - `--global` 与 `--project` 互斥；`--all` 与 `--skill` 互斥；`--yes` 只跳过确认，不隐含选择全部 Skill。
+- `--source` 在 `search` 中不创建持久 catalog/registry 配置；它只是指定本次搜索的 source。
 
 ---
 

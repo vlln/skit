@@ -38,6 +38,9 @@ func Update(req UpdateRequest) (UpdateResult, error) {
 		}
 		names = []string{req.Name}
 	}
+	if len(names) == 0 {
+		return result, fmt.Errorf("no locked Skills to update")
+	}
 	session := addSession{
 		ctx:        ctx(req.Context),
 		paths:      paths,

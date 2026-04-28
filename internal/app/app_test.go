@@ -79,6 +79,91 @@ func TestLocalClosedLoop(t *testing.T) {
 	}
 }
 
+func TestSearchLocalSource(t *testing.T) {
+	project := t.TempDir()
+	repo := filepath.Join(project, "awesome-skills")
+	writeSkillWithBody(t, filepath.Join(repo, "skills", "pdf-tools"), "---\nname: pdf-tools\ndescription: Extract and summarize PDF files.\n---\n# PDF tools\n")
+	writeSkillWithBody(t, filepath.Join(repo, "skills", "deploy-tools"), "---\nname: deploy-tools\ndescription: Deploy services.\n---\n# Deploy tools\n")
+
+	results, err := Search(SearchRequest{
+		Context: context.Background(),
+		CWD:     project,
+		Query:   "pdf",
+		Source:  repo,
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %#v", results)
+	}
+	if results[0].Name != "pdf-tools" {
+		t.Fatalf("name = %q", results[0].Name)
+	}
+	if results[0].Install != filepath.ToSlash(filepath.Join(repo, "skills", "pdf-tools")) {
+		t.Fatalf("install = %q", results[0].Install)
+	}
+	if results[0].Path != "skills/pdf-tools" {
+		t.Fatalf("path = %q", results[0].Path)
+	}
+}
+
+func TestListStoreShowsShortHashAndUse(t *testing.T) {
+	project := t.TempDir()
+	source := filepath.Join(project, "store-demo")
+	writeSkill(t, source, "store-demo")
+
+	added, err := Add(AddRequest{CWD: project, Scope: Project, Source: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := ListStore(ListStoreRequest{CWD: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *StoreListEntry
+	for i := range entries {
+		if entries[i].Name == "store-demo" {
+			found = &entries[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("store entry not found in %#v", entries)
+	}
+	if found.Tree == added.Entries[0].Hashes.Tree {
+		t.Fatalf("tree hash should be shortened, got full hash %q", found.Tree)
+	}
+	if strings.HasPrefix(found.Tree, "sha256-") {
+		t.Fatalf("tree hash should omit algorithm prefix, got %q", found.Tree)
+	}
+	if !containsText(found.Use, "active") || !containsText(found.Use, "locked") {
+		t.Fatalf("use = %#v, want active and locked", found.Use)
+	}
+
+	entries, err = ListStore(ListStoreRequest{CWD: project, Names: []string{"store-demo"}, IncludeLocks: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !containsText(entries[0].Locks, "project") || !containsText(entries[0].Locks, filepath.Clean(project)+":.agents/skills/skit.lock") {
+		t.Fatalf("entries with locks = %#v", entries)
+	}
+
+	if _, err := Remove(RemoveRequest{CWD: project, Scope: Project, Name: "store-demo"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = ListStore(ListStoreRequest{CWD: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name == "store-demo" && !containsText(entry.Use, "orphan") {
+			t.Fatalf("entry after remove = %#v, want orphan", entry)
+		}
+	}
+}
+
 func TestAddActivatesCodexProjectAgent(t *testing.T) {
 	project := t.TempDir()
 	source := filepath.Join(project, "demo")
@@ -216,6 +301,33 @@ func TestRemovePruneKeepsStoreReferencedByAnotherProject(t *testing.T) {
 	}
 	if _, err := os.Stat(addedA.StorePaths[0]); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRemoveStoreDeletesOnlyOrphanSnapshot(t *testing.T) {
+	project := t.TempDir()
+	source := filepath.Join(project, "store-remove-demo")
+	writeSkill(t, source, "store-remove-demo")
+
+	added, err := Add(AddRequest{CWD: project, Scope: Project, Source: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RemoveStore(RemoveStoreRequest{CWD: project, Name: "store-remove-demo"}); err == nil {
+		t.Fatal("expected locked store removal to fail")
+	}
+	if _, err := Remove(RemoveRequest{CWD: project, Scope: Project, Name: "store-remove-demo"}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RemoveStore(RemoveStoreRequest{CWD: project, Name: "store-remove-demo", TreePrefix: shortTreeHash(added.Entries[0].Hashes.Tree)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Removed || result.Name != "store-remove-demo" {
+		t.Fatalf("result = %#v", result)
+	}
+	if _, err := os.Stat(added.StorePaths[0]); !os.IsNotExist(err) {
+		t.Fatalf("store path still exists or stat failed: %v", err)
 	}
 }
 
@@ -413,6 +525,25 @@ func TestUpdateMissingSkill(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestUpdateEmptyLockDoesNotWriteIndex(t *testing.T) {
+	project := t.TempDir()
+	paths := store.PathsFor(Project, project)
+
+	_, err := Update(UpdateRequest{CWD: project, Scope: Project})
+	if err == nil {
+		t.Fatal("expected empty update error")
+	}
+	if !strings.Contains(err.Error(), "no locked Skills to update") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(paths.Lock); !os.IsNotExist(err) {
+		t.Fatalf("project lock should not be written: %v", err)
+	}
+	if _, err := os.Stat(projectLockIndexPath(paths.Root, paths.Lock)); !os.IsNotExist(err) {
+		t.Fatalf("project lock index should not be written: %v", err)
 	}
 }
 

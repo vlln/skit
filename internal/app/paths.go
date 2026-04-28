@@ -2,6 +2,7 @@ package app
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -110,15 +111,53 @@ func writeLock(paths store.Paths, scope Scope, cwd string, lock lockfile.Lock) e
 		return err
 	}
 	if scope == Project {
-		if err := lockfile.Write(projectLockIndexPath(paths.Root, cwd), lock); err != nil {
+		if err := lockfile.Write(projectLockIndexPath(paths.Root, paths.Lock), lock); err != nil {
+			return err
+		}
+		if err := writeProjectLockIndexMeta(paths.Root, paths.Lock, cwd); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func projectLockIndexPath(storeRoot, cwd string) string {
-	return filepath.Join(filepath.Dir(storeRoot), "locks", hashPath(cwd)+".lock")
+func projectLockIndexPath(storeRoot, lockPath string) string {
+	abs := lockPath
+	if got, err := filepath.Abs(lockPath); err == nil {
+		abs = got
+	}
+	return filepath.Join(filepath.Dir(storeRoot), "locks", hashPath(filepath.Clean(abs))+".lock")
+}
+
+func projectLockIndexMetaPath(lockPath string) string {
+	return lockPath + ".meta.json"
+}
+
+type projectLockIndexMeta struct {
+	Version int    `json:"version"`
+	CWD     string `json:"cwd"`
+	Lock    string `json:"lock"`
+}
+
+func writeProjectLockIndexMeta(storeRoot, lockPath, cwd string) error {
+	path := projectLockIndexMetaPath(projectLockIndexPath(storeRoot, lockPath))
+	abs := cwd
+	if got, err := filepath.Abs(cwd); err == nil {
+		abs = got
+	}
+	absLock := lockPath
+	if got, err := filepath.Abs(lockPath); err == nil {
+		absLock = got
+	}
+	raw, err := json.MarshalIndent(projectLockIndexMeta{Version: 1, CWD: filepath.Clean(abs), Lock: filepath.Clean(absLock)}, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, raw, 0644)
 }
 
 func hashPath(path string) string {

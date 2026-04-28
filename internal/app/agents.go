@@ -62,6 +62,31 @@ func activeDirs(paths store.Paths, scope Scope, cwd string, agents []string) ([]
 	return dirs, nil
 }
 
+func pathsForAgent(scope Scope, cwd, name string) (store.Paths, error) {
+	paths := store.PathsFor(scope, cwd)
+	dir, err := agentActiveDir(scope, cwd, name)
+	if err != nil {
+		return paths, err
+	}
+	paths.Active = dir
+	paths.Lock = filepath.Join(dir, "skit.lock")
+	return paths, nil
+}
+
+func agentActiveDir(scope Scope, cwd, name string) (string, error) {
+	target, ok := agentTargets[name]
+	if !ok {
+		return "", fmt.Errorf("unknown agent %q; valid agents: %s", name, validAgentList())
+	}
+	dir := target.Project
+	if scope == Global {
+		dir = target.Global()
+	} else if !filepath.IsAbs(dir) {
+		dir = filepath.Join(cwd, dir)
+	}
+	return filepath.Clean(dir), nil
+}
+
 func validAgentList() string {
 	names := make([]string, 0, len(agentTargets))
 	for name := range agentTargets {

@@ -1,33 +1,103 @@
-# skit
+<p align="center">
+  <img src="docs/assets/skill-kit-mark.svg" width="112" alt="Skill Kit logo">
+</p>
 
-`skit` is a small, reproducible Skill manager for agent ecosystems.
+<h1 align="center">Skill Kit</h1>
 
-It works with `SKILL.md` packages as defined by [agentskills.io](../agentskills.io/):
-discover Skills, fetch them from local and git sources, store immutable
-snapshots, write deterministic locks, activate Skills through symlinks, and
-diagnose declared local requirements.
+<p align="center">
+  <strong>Skill management CLI for reproducible agent ecosystems.</strong>
+</p>
+
+<p align="center">
+  <code>skit</code> discovers, installs, locks, activates, updates, diagnoses, and garbage-collects <code>SKILL.md</code> packages.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-111827?style=flat-square"></a>
+  <img alt="Go 1.23+" src="https://img.shields.io/badge/Go-1.23%2B-00ADD8?style=flat-square">
+  <img alt="CLI: skit" src="https://img.shields.io/badge/CLI-skit-2F80ED?style=flat-square">
+  <img alt="Store: content addressed" src="https://img.shields.io/badge/store-content--addressed-27AE60?style=flat-square">
+  <img alt="No skill execution during install" src="https://img.shields.io/badge/install-no%20skill%20execution-F2C94C?style=flat-square">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-101820?style=flat-square">
+</p>
+
+---
+
+Skill Kit is a small, reproducible Skill manager for agent ecosystems. The
+product name is **Skill Kit (Skill management CLI)** and the command-line
+binary is `skit`.
+
+It works with `SKILL.md` packages as defined by
+[agentskills.io](../agentskills.io/): discover Skills, fetch them from local
+and git sources, store immutable snapshots, write deterministic locks, activate
+Skills through symlinks, and diagnose declared local requirements.
 
 > Status: v0.1. The CLI and lock format are usable, but still allowed to change
 > before a first stable release.
 
-## Features
+## Contents
 
-- Standards-oriented `SKILL.md` parsing with ecosystem metadata.
-- Content-addressed global store under XDG data directories.
-- Project activation via `.agents/skills` and global activation via `~/.agents/skills`.
-- Deterministic `skit.lock` files stored next to active Skills.
-- Local, GitHub, GitLab, SSH git, and generic git source parsing/fetching.
-- Dependency locking for `metadata.skit.dependencies`.
-- Requirement diagnostics for declared binaries, environment variables, config,
-  platforms, and stored warnings.
-- JSON output for automation-friendly commands.
-- No Skill code execution during install, inspect, update, or restore.
+- [Why Skill Kit](#why-skill-kit)
+- [How It Works](#how-it-works)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Common Workflows](#common-workflows)
+- [Bundled Skills](#bundled-skills)
+- [Command Reference](#command-reference)
+- [Paths](#paths)
+- [Sources](#sources)
+- [Discovery](#discovery)
+- [Metadata](#metadata)
+- [Safety](#safety)
+- [Ecosystem Imports](#ecosystem-imports)
+- [Development](#development)
+
+## Why Skill Kit
+
+Agent Skills should be easy to share, but local installs need the same boring
+properties that package managers already taught us to expect: deterministic
+locks, stable restore, safe updates, and cleanup that does not delete content
+still used elsewhere.
+
+Skill Kit focuses on that lifecycle:
+
+| Need | Skill Kit behavior |
+|------|--------------------|
+| Reproducible project setup | Writes deterministic `skit.lock` files next to active Skills. |
+| Shared local cache | Stores immutable snapshots in a content-addressed global store. |
+| Agent compatibility | Activates Skills through symlinks for project, global, and selected agent roots. |
+| Safe operations | Does not execute Skill code during install, inspect, update, restore, or doctor. |
+| Multi-source installs | Handles local paths, GitHub, GitLab, SSH git, and generic git repositories. |
+| Maintenance | Supports update, remove, conservative pruning, and whole-store garbage collection. |
+| Interop | Imports existing `skills` and `clawhub` lock files as conservative `incomplete` entries. |
+
+## How It Works
+
+```mermaid
+flowchart LR
+  source[Skill source] --> discover[Discover SKILL.md]
+  discover --> snapshot[Hash and copy snapshot]
+  snapshot --> store[(Shared content-addressed store)]
+  snapshot --> lock[Write skit.lock]
+  store --> active[Active symlink]
+  lock --> restore[Restore / update / doctor]
+  lock --> gc[Garbage collection keeps referenced snapshots]
+```
+
+Core model:
+
+- **Source**: a local path or git locator that contains one or more Skills.
+- **Snapshot**: an immutable copy of a discovered Skill directory.
+- **Store**: a shared content-addressed directory keyed by tree hash and Skill name.
+- **Lock**: the reproducible record of source identity, resolved ref, hashes, dependencies, and warnings.
+- **Active Skill**: a symlink from `.agents/skills` or `~/.agents/skills` to a store snapshot.
 
 ## Installation
 
 Recommended install path for users is a prebuilt binary from GitHub Releases.
 Release artifacts are published for macOS, Linux, and Windows, with a checksum
 file. macOS and Linux artifacts use `.tar.gz`; Windows artifacts use `.zip`.
+
 Install macOS/Linux with:
 
 ```sh
@@ -93,13 +163,34 @@ Create a Skill:
 skit init my-skill
 ```
 
-Install a local Skill into the current project:
+Install it into the current project:
 
 ```sh
 skit install ./my-skill
 ```
 
-Install a Skill from a GitHub repository:
+List locked Skills:
+
+```sh
+skit list
+```
+
+Restore active symlinks from the lock on another machine:
+
+```sh
+skit install
+```
+
+Inspect and diagnose:
+
+```sh
+skit inspect my-skill
+skit doctor
+```
+
+## Common Workflows
+
+### Install From GitHub
 
 ```sh
 skit install github:owner/repo --skill skill-name
@@ -111,31 +202,64 @@ Install more than one Skill from the same source:
 skit install github:owner/repo --skill skill-one skill-two
 ```
 
-Restore active symlinks from the lock:
+Use inline selectors for multiple sources:
 
 ```sh
-skit install
+skit install owner/repo@skill-one other/repo@skill-two
 ```
 
-Also activate a Skill for Codex:
+### Activate For Agents
+
+`--agent` keeps the skit lock and content-addressed store as the source of
+truth, then creates extra symlinks for selected agents.
 
 ```sh
 skit install ./my-skill --agent codex
 skit install --global ./my-skill --agent codex
 ```
 
-Search for published Skills:
+Supported agent names:
+
+```text
+codex
+claude-code
+cursor
+gemini-cli
+opencode
+```
+
+For Codex, project installs target `.agents/skills` and global installs target
+`${CODEX_HOME:-~/.codex}/skills`. The default skit active roots are already
+handled by `--project` and `--global`, so there is no separate universal agent
+target.
+
+### Search, Update, And Clean Up
 
 ```sh
 skit search "skill create"
+skit search pdf --source github:owner/awesome-skills
+skit search deploy --source ./awesome-skills
+skit update
+skit remove old-skill
+skit gc
 ```
 
-Inspect and diagnose:
+`skit search --source` is intentionally a one-shot source scan: it reads a
+local path or fetches one git repository, discovers `SKILL.md` packages, and
+filters them without adding persistent registry or catalog state. Use the
+printed install argument with `skit install`.
+
+Inspect the shared store without printing fixed store paths:
 
 ```sh
-skit inspect skill-name
-skit doctor
+skit list --store
+skit list --store --locks demo
+skit remove --store demo raerh3OtDDu9
 ```
+
+`skit install` and `skit update` check for newer skit releases at most once per
+day and print a short update hint when one is available. Set
+`SKIT_UPDATE_CHECK=0` to disable the automatic check.
 
 ## Bundled Skills
 
@@ -150,23 +274,30 @@ skit install --global vlln/skit/skills/<skill-name>
 | [`search-skills`](skills/search-skills) | Find, evaluate, inspect, and install agent skills with the `skit` CLI. |
 | [`make-skill`](skills/make-skill) | Create or revise Agent Skills with precise frontmatter, concise instructions, validation checks, and skit-friendly metadata. |
 
-## Commands
+## Command Reference
 
-```text
-skit install [source...]  Install sources, or restore from skit.lock
-skit search <query>       Search for Skills
-skit list                 List locked Skills
-skit remove <name...>     Remove locked and active Skills
-skit uninstall <name...>  Alias for remove
-skit gc                   Prune unreferenced store snapshots
-skit update [name]        Refresh locked Skills from their sources
-skit inspect <target>     Inspect a locked Skill or source
-skit doctor               Check lock, store, hashes, and requirements
-skit init [name]          Create a SKILL.md template
-skit import-lock <kind>   Import a compatible lock file
-skit version              Print the CLI version
-skit version --check      Check GitHub Releases for a newer skit version
-```
+| Command | Purpose |
+|---------|---------|
+| `skit install [source...]` | Install sources, or restore active symlinks from `skit.lock`. |
+| `skit search <query>` | Search for Skills. |
+| `skit search <query> --source <repo-or-path>` | Search one repository or local path without registering it. |
+| `skit list` | List locked Skills. |
+| `skit list --agent <name>` | List Skills from an agent-specific `skit.lock`. |
+| `skit list --store` | List shared store snapshots with short tree IDs and compact use status. |
+| `skit list --store --locks [name...]` | Show which locks or known project paths reference store snapshots. |
+| `skit remove <name...>` | Remove locked and active Skills. |
+| `skit remove --agent <name> <skill...>` | Remove from an agent-specific `skit.lock`. |
+| `skit remove --store <name> [tree-prefix]` | Remove an orphan store snapshot by name and optional tree prefix. |
+| `skit uninstall <name...>` | Alias for `remove`. |
+| `skit gc` | Garbage collect unreferenced store snapshots. |
+| `skit update [name]` | Refresh locked Skills from their sources. |
+| `skit inspect <target>` | Inspect a locked Skill or source. |
+| `skit doctor` | Check lock, store, hashes, and declared requirements. |
+| `skit init [name]` | Create a `SKILL.md` template. |
+| `skit import-lock <kind>` | Import a compatible lock file. |
+| `skit help <command>` | Show command-specific help. |
+| `skit version` | Print the CLI version. |
+| `skit version --check` | Check GitHub Releases for a newer skit version. |
 
 Common flags:
 
@@ -176,32 +307,18 @@ Common flags:
 --agent <names...> Also activate for specific agents, such as codex
 --skill <names...> Select one or more Skills from a single source
 --all              Install every discovered non-internal Skill from a source
---full-depth       Search recursively for Skills when installing a source
+--full-depth       Search recursively for Skills when installing or searching a source
 --ignore-deps      Skip declared Skill dependencies
 --no-active        Write store/lock only; do not create active symlinks
 --force            Replace an existing non-symlink active path
 --prune            With remove, delete unreferenced store snapshots
+--store            With list/remove, operate on shared store snapshots
+--locks            With list --store, show lock owners
 --json             Print JSON for supported commands
 ```
 
-`--agent` keeps the skit lock and content-addressed store as the source of
-truth, then creates extra symlinks for selected agents. Supported agent names:
-`codex`, `claude-code`, `cursor`, `gemini-cli`, and `opencode`. For Codex,
-project installs target `.agents/skills` and global installs target
-`${CODEX_HOME:-~/.codex}/skills`. The default skit active roots are already
-handled by `--project` and `--global`, so there is no separate universal agent
-target.
-
-`--skill` may be provided once. It can contain multiple space-separated Skill
-names for one source. For multiple sources, use inline selectors:
-
-```sh
-skit install owner/repo@skill-one other/repo@skill-two
-```
-
-`skit install` and `skit update` check for newer skit releases at most once per
-day and print a short update hint when one is available. Set
-`SKIT_UPDATE_CHECK=0` to disable the automatic check.
+Run `skit help <command>` for command-specific details, including store,
+lockfile, activation, update, garbage collection, and lossy import behavior.
 
 ## Paths
 
@@ -272,7 +389,8 @@ Discovery is bounded and deterministic:
 - `metadata.internal: true` Skills are skipped unless selected explicitly with
   `--skill`.
 
-Lowercase `skill.md` is accepted for ecosystem interoperability and recorded as a warning.
+Lowercase `skill.md` is accepted for ecosystem interoperability and recorded as
+a warning.
 
 ## Metadata
 
@@ -316,6 +434,13 @@ Existing ecosystem lock files can be imported:
 skit import-lock skills
 skit import-lock clawhub
 ```
+
+Supported imports:
+
+| Kind | Reads | Import behavior |
+|------|-------|-----------------|
+| `skills` | `./skills-lock.json` | Preserves source fields and `computedHash` as diagnostics. |
+| `clawhub` | `./.clawhub/lock.json` or legacy `./.clawdhub/lock.json` | Preserves registry, slug, and version clues when available. |
 
 Lossy imports are marked `incomplete: true` because the source lock may not
 contain enough information for reproducible restore. Reinstall the Skill with
