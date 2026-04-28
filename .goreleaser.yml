@@ -46,7 +46,7 @@ brews:
     repository:
       owner: vlln
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      token: "{{ .Env.HOMEBREW_RELEASE_TOKEN }}"
     homepage: "https://github.com/vlln/skit"
     description: "Small, reproducible Skill manager for agent ecosystems"
     license: "MIT"
