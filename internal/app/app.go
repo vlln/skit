@@ -136,11 +136,11 @@ func searchRegistrySource(req SearchRequest, src SearchSource) ([]SearchResult, 
 	for _, result := range results {
 		out = append(out, SearchResult{
 			Name:        result.Name,
-				Description: result.Description,
-			Slug:       result.Slug,
-			Source:     result.Source,
-			SourceName: src.Name,
-			Installs:   result.Installs,
+			Description: result.Description,
+			Slug:        result.Slug,
+			Source:      result.Source,
+			SourceName:  src.Name,
+			Installs:    result.Installs,
 		})
 	}
 	return out, nil
