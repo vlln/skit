@@ -41,6 +41,7 @@ type ParseOptions struct {
 	ExpectedBasename  string
 	IncludeInternal   bool
 	FullDepth         bool
+	IgnoreInvalid     bool
 }
 
 func ParseDirWithOptions(root string, opts ParseOptions) (Skill, error) {

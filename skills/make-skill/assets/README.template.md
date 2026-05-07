@@ -23,8 +23,8 @@ Install the Agent Skills from https://raw.githubusercontent.com/<owner>/<repo>/m
 ## Installation
 
 Recommended: install these skills with
-[`skit`](https://github.com/vlln/skit). It fetches skills from the published
-repository, keeps a lock file, and can diagnose declared requirements.
+`skit`. It fetches skills from the published repository, records them in a local
+manifest, and activates them for local agents.
 
 ### skit
 
@@ -34,19 +34,18 @@ Install `skit` with Homebrew:
 brew install vlln/tap/skit
 ```
 
-For other platforms, see the
-[`skit` installation instructions](https://github.com/vlln/skit#installation).
+For other platforms, see the `skit` installation instructions.
 
 Install one skill:
 
 ```sh
-skit install --global <owner>/<repo>/skills/<skill-name>
+skit install <owner>/<repo>/skills/<skill-name>
 ```
 
 Install all skills in this repository:
 
 ```sh
-skit install --global <owner>/<repo> --all
+skit install <owner>/<repo> --all
 ```
 
 ### npx skills

@@ -4,16 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vlln/skit/internal/lockfile"
-	"github.com/vlln/skit/internal/store"
+	"github.com/vlln/skit/internal/source"
 )
 
 type UpdateRequest struct {
-	Context    context.Context
-	CWD        string
-	Scope      Scope
-	Name       string
-	Agents     []string
+	Context context.Context
+	CWD     string
+	Scope   Scope
+	Name    string
+	Agents  []string
+
+	// Deprecated pre-1.0 flag.
 	IgnoreDeps bool
 }
 
@@ -21,61 +22,53 @@ type UpdateResult = AddResult
 
 func Update(req UpdateRequest) (UpdateResult, error) {
 	var result UpdateResult
-	cwd := cleanCWD(req.CWD)
-	paths := store.PathsFor(req.Scope, cwd)
-	activeDirs, err := activeDirs(paths, req.Scope, cwd, req.Agents)
+	manifest, err := readManifest()
 	if err != nil {
 		return result, err
 	}
-	lock, err := lockfile.Read(paths.Lock)
-	if err != nil {
-		return result, err
-	}
-	names := lockfile.Names(lock)
+	names := manifestNames(manifest)
 	if req.Name != "" {
-		if _, ok := lock.Skills[req.Name]; !ok {
+		if _, ok := manifest.Skills[req.Name]; !ok {
 			return result, fmt.Errorf("%s is not installed", req.Name)
 		}
 		names = []string{req.Name}
 	}
 	if len(names) == 0 {
-		return result, fmt.Errorf("no locked Skills to update")
-	}
-	session := addSession{
-		ctx:        ctx(req.Context),
-		paths:      paths,
-		lock:       lock,
-		result:     &result,
-		ignoreDeps: req.IgnoreDeps,
-		replace:    true,
-		visiting:   map[string]bool{},
-		activeDirs: activeDirs,
+		return result, fmt.Errorf("no installed skills to update")
 	}
 	for _, name := range names {
-		current := session.lock.Skills[name]
-		if current.Incomplete {
-			result.Warnings = appendUnique(result.Warnings, fmt.Sprintf("skipped incomplete entry %s", name))
-			continue
+		entry := manifest.Skills[name]
+		src := sourceString(entry.Source)
+		agents := entry.Agents
+		if len(req.Agents) > 0 {
+			agents = uniqueAgents(req.Agents)
 		}
-		src, err := sourceFromLock(current.Source)
+		updated, err := Add(AddRequest{
+			Context: req.Context,
+			CWD:     req.CWD,
+			Scope:   req.Scope,
+			Source:  src,
+			Name:    entry.Name,
+			Skills:  []string{entry.Source.Skill},
+			Agents:  agents,
+			Force:   true,
+		})
 		if err != nil {
 			return result, err
 		}
-		parsed, srcOut, workRoot, resolvedRef, cleanup, err := resolveOneForInstall(session.ctx, paths, src)
-		if err != nil {
-			cleanup()
-			return result, err
-		}
-		entry, storePath, err := session.installParsed(srcOut, parsed, workRoot, resolvedRef)
-		cleanup()
-		if err != nil {
-			return result, err
-		}
-		result.Entries = append(result.Entries, entry)
-		result.StorePaths = append(result.StorePaths, storePath)
-	}
-	if err := writeLock(paths, req.Scope, cleanCWD(req.CWD), session.lock); err != nil {
-		return result, err
+		result.Entries = append(result.Entries, updated.Entries...)
+		result.ActivePaths = append(result.ActivePaths, updated.ActivePaths...)
+		result.Warnings = append(result.Warnings, updated.Warnings...)
 	}
 	return result, nil
+}
+
+func sourceString(src ManifestSource) string {
+	if src.Type == string(source.Local) {
+		return src.Locator
+	}
+	if src.URL != "" {
+		return src.URL
+	}
+	return src.Locator
 }

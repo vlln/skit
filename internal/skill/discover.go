@@ -23,6 +23,9 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 	if hasMarker(abs) {
 		s, err := ParseDirWithOptions(abs, opts)
 		if err != nil {
+			if opts.IgnoreInvalid {
+				return nil, []string{invalidSkillWarning(abs, err)}, nil
+			}
 			return nil, nil, err
 		}
 		if s.Internal && !opts.IncludeInternal {
@@ -46,6 +49,10 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 		}
 		s, err := ParseDirWithOptions(candidate, childParseOptions(opts))
 		if err != nil {
+			if opts.IgnoreInvalid {
+				warnings = append(warnings, invalidSkillWarning(candidate, err))
+				continue
+			}
 			return nil, warnings, err
 		}
 		if s.Internal && !opts.IncludeInternal {
@@ -53,6 +60,10 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 			continue
 		}
 		if prev, ok := seen[s.Name]; ok {
+			if opts.IgnoreInvalid {
+				warnings = append(warnings, duplicateSkillWarning(s.Name, prev, candidate))
+				continue
+			}
 			return nil, warnings, &DuplicateNameError{Name: s.Name, First: prev, Second: candidate}
 		}
 		seen[s.Name] = candidate
@@ -70,6 +81,10 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 			}
 			s, err := ParseDirWithOptions(candidate, childParseOptions(opts))
 			if err != nil {
+				if opts.IgnoreInvalid {
+					warnings = append(warnings, invalidSkillWarning(candidate, err))
+					continue
+				}
 				return nil, warnings, err
 			}
 			if s.Internal && !opts.IncludeInternal {
@@ -78,6 +93,10 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 			}
 			if prev, ok := seen[s.Name]; ok {
 				if prev == candidate {
+					continue
+				}
+				if opts.IgnoreInvalid {
+					warnings = append(warnings, duplicateSkillWarning(s.Name, prev, candidate))
 					continue
 				}
 				return nil, warnings, &DuplicateNameError{Name: s.Name, First: prev, Second: candidate}
@@ -225,4 +244,12 @@ func skipDir(name string) bool {
 
 func internalSkipWarning(name, path string) string {
 	return fmt.Sprintf("internal skill %q skipped at %s; pass --skill %s to install explicitly", name, path, name)
+}
+
+func invalidSkillWarning(path string, err error) string {
+	return fmt.Sprintf("invalid skill skipped at %s: %v", path, err)
+}
+
+func duplicateSkillWarning(name, first, second string) string {
+	return fmt.Sprintf("duplicate skill %q skipped at %s; first seen at %s", name, second, first)
 }

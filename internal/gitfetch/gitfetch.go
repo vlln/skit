@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,40 +72,65 @@ func CloneWithOptions(ctx context.Context, url, ref, tmpParent string, opts Clon
 	args := []string{"clone"}
 	sparsePaths := cleanSparsePaths(opts.SparsePaths)
 	if len(sparsePaths) > 0 {
-		args = append(args, "--filter=blob:none", "--sparse")
+		args = append(args, "--filter=blob:none", "--sparse", "--no-checkout")
 	}
 	if !fullSHA.MatchString(ref) {
-		args = append(args, "--depth", "1")
+		args = append(args, "--depth", "1", "--single-branch")
 	}
 	if ref != "" && !fullSHA.MatchString(ref) {
 		args = append(args, "--branch", ref)
 	}
 	args = append(args, url, dir)
-	if err := runGit(cloneCtx, "", args...); err != nil {
-		return result, classifyCloneError(url, err, cloneCtx.Err())
+	run := runGit
+	output := outputGit
+	var cloneErr error
+	if isGitHubHTTPSURL(url) {
+		run = runGitWithoutGitHubAuth
+		output = outputGitWithoutGitHubAuth
+		cloneErr = run(cloneCtx, "", args...)
+		if cloneErr != nil && shouldRetryWithGitHubAuth(ctx, cloneErr) {
+			if resetErr := resetCloneDir(dir); resetErr != nil {
+				return result, resetErr
+			}
+			cloneErr = runGit(cloneCtx, "", args...)
+			if cloneErr == nil {
+				run = runGit
+				output = outputGit
+			}
+		}
+	} else {
+		cloneErr = run(cloneCtx, "", args...)
+	}
+	if cloneErr != nil {
+		return result, classifyCloneError(url, cloneErr, cloneCtx.Err())
 	}
 	if len(sparsePaths) > 0 {
-		if err := runGit(ctx, dir, append([]string{"sparse-checkout", "set", "--no-cone", "--"}, sparsePatterns(sparsePaths)...)...); err != nil {
+		if err := run(ctx, dir, append([]string{"sparse-checkout", "set", "--no-cone", "--"}, sparsePatterns(sparsePaths)...)...); err != nil {
 			return result, fmt.Errorf("configure sparse checkout: %w", err)
+		}
+		if !fullSHA.MatchString(ref) {
+			if err := run(ctx, dir, "checkout", "--force"); err != nil {
+				return result, fmt.Errorf("checkout sparse paths: %w", err)
+			}
 		}
 	}
 	if fullSHA.MatchString(ref) {
-		if err := runGit(ctx, dir, "checkout", "--detach", ref); err != nil {
-			if fetchErr := runGit(ctx, dir, "fetch", "--depth", "1", "origin", ref); fetchErr != nil {
+		if err := run(ctx, dir, "checkout", "--detach", ref); err != nil {
+			if fetchErr := run(ctx, dir, "fetch", "--depth", "1", "origin", ref); fetchErr != nil {
 				return result, fmt.Errorf("checkout %s: %w; fetch by commit also failed: %v", ref, err, fetchErr)
 			}
-			if err := runGit(ctx, dir, "checkout", "--detach", ref); err != nil {
+			if err := run(ctx, dir, "checkout", "--detach", ref); err != nil {
 				return result, fmt.Errorf("checkout %s after fetch: %w", ref, err)
 			}
 		}
 	}
-	resolved, err := outputGit(ctx, dir, "rev-parse", "HEAD")
+	resolved, err := output(ctx, dir, "rev-parse", "HEAD")
 	if err != nil {
 		return result, err
 	}
 	actualRef := ref
 	if actualRef == "" {
-		actualRef = defaultBranch(ctx, dir)
+		actualRef = defaultBranch(ctx, dir, output)
 	}
 	cleanup = false
 	return CloneResult{Dir: dir, Ref: actualRef, ResolvedRef: strings.TrimSpace(resolved)}, nil
@@ -165,10 +191,7 @@ func classifyCloneError(url string, err error, ctxErr error) error {
 	msg := err.Error()
 	lower := strings.ToLower(msg)
 	isTimeout := ctxErr == context.DeadlineExceeded || strings.Contains(lower, "timed out") || strings.Contains(lower, "timeout")
-	isAuth := strings.Contains(lower, "authentication failed") ||
-		strings.Contains(lower, "could not read username") ||
-		strings.Contains(lower, "permission denied") ||
-		strings.Contains(lower, "repository not found")
+	isAuth := isAuthGitError(err)
 	if isTimeout {
 		msg = "clone timed out after 60s; check network access and repository authentication"
 	} else if isAuth {
@@ -177,6 +200,30 @@ func classifyCloneError(url string, err error, ctxErr error) error {
 		msg = "failed to clone " + url + ": " + msg
 	}
 	return &CloneError{URL: url, Message: msg, Timeout: isTimeout, Auth: isAuth}
+}
+
+func isAuthGitError(err error) bool {
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "authentication failed") ||
+		strings.Contains(lower, "could not read username") ||
+		strings.Contains(lower, "permission denied") ||
+		strings.Contains(lower, "repository not found")
+}
+
+func shouldRetryWithGitHubAuth(ctx context.Context, err error) bool {
+	return githubToken(ctx) != "" && isAuthGitError(err)
+}
+
+func isGitHubHTTPSURL(rawURL string) bool {
+	u, parseErr := url.Parse(rawURL)
+	return parseErr == nil && u.Scheme == "https" && strings.EqualFold(u.Hostname(), "github.com")
+}
+
+func resetCloneDir(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	return os.MkdirAll(dir, 0755)
 }
 
 func Remove(dir string) error {
@@ -202,9 +249,17 @@ func RemoveUnder(dir, parent string) error {
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
+	return runGitWithEnv(ctx, dir, gitEnv(ctx), args...)
+}
+
+func runGitWithoutGitHubAuth(ctx context.Context, dir string, args ...string) error {
+	return runGitWithEnv(ctx, dir, gitEnvWithoutGitHubAuth(), args...)
+}
+
+func runGitWithEnv(ctx context.Context, dir string, env []string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
+	cmd.Env = env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -218,9 +273,17 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 }
 
 func outputGit(ctx context.Context, dir string, args ...string) (string, error) {
+	return outputGitWithEnv(ctx, dir, gitEnv(ctx), args...)
+}
+
+func outputGitWithoutGitHubAuth(ctx context.Context, dir string, args ...string) (string, error) {
+	return outputGitWithEnv(ctx, dir, gitEnvWithoutGitHubAuth(), args...)
+}
+
+func outputGitWithEnv(ctx context.Context, dir string, env []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
+	cmd.Env = env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -234,8 +297,48 @@ func outputGit(ctx context.Context, dir string, args ...string) (string, error) 
 	return string(out), nil
 }
 
+func gitEnv(ctx context.Context) []string {
+	env := gitEnvWithoutGitHubAuth()
+	token := githubToken(ctx)
+	if token == "" {
+		return env
+	}
+	return append(env,
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=http.https://github.com/.extraheader",
+		"GIT_CONFIG_VALUE_0=AUTHORIZATION: bearer "+token,
+	)
+}
+
+func gitEnvWithoutGitHubAuth() []string {
+	return append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
+}
+
+func githubToken(ctx context.Context) string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for _, key := range []string{"SKIT_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	if _, err := exec.LookPath("gh"); err != nil {
+		return ""
+	}
+	tokenCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(tokenCtx, "gh", "auth", "token")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func remoteRefs(ctx context.Context, url string) (map[string]bool, error) {
-	out, err := outputGit(ctx, "", "ls-remote", "--heads", "--tags", url)
+	out, err := outputGitWithoutGitHubAuth(ctx, "", "ls-remote", "--heads", "--tags", url)
 	if err != nil {
 		return nil, err
 	}
@@ -255,8 +358,8 @@ func remoteRefs(ctx context.Context, url string) (map[string]bool, error) {
 	return refs, nil
 }
 
-func defaultBranch(ctx context.Context, dir string) string {
-	out, err := outputGit(ctx, dir, "symbolic-ref", "--short", "HEAD")
+func defaultBranch(ctx context.Context, dir string, output func(context.Context, string, ...string) (string, error)) string {
+	out, err := output(ctx, dir, "symbolic-ref", "--short", "HEAD")
 	if err != nil {
 		return ""
 	}

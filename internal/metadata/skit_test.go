@@ -17,6 +17,8 @@ metadata:
         - PDF_API_KEY
       config:
         - ~/.config/demo
+      skills:
+        - github:owner/repo@dep-skill
     primaryEnv: PRIMARY_KEY
     os:
       - macos
@@ -41,6 +43,9 @@ metadata:
 	if len(got.Requires.Config) != 1 || got.Requires.Config[0] != "~/.config/demo" {
 		t.Fatalf("config = %#v", got.Requires.Config)
 	}
+	if len(got.Requires.Skills) != 1 || got.Requires.Skills[0] != "github:owner/repo@dep-skill" {
+		t.Fatalf("skills = %#v", got.Requires.Skills)
+	}
 	if len(got.Platforms.OS) != 1 || got.Platforms.OS[0] != "darwin" {
 		t.Fatalf("os = %#v", got.Platforms.OS)
 	}
@@ -58,12 +63,16 @@ metadata:
     requires:
       bins:
         - git
+      skills:
+        - github:owner/repo@explicit
   clawdbot:
     requires:
       bins:
         - qpdf
       env:
         - API_KEY
+      skills:
+        - github:owner/repo@compat
 `)
 	if err != nil {
 		t.Fatal(err)
@@ -77,5 +86,8 @@ metadata:
 	}
 	if len(got.Requires.Env) != 1 || got.Requires.Env[0] != "API_KEY" {
 		t.Fatalf("env = %#v", got.Requires.Env)
+	}
+	if len(got.Requires.Skills) != 1 || got.Requires.Skills[0] != "github:owner/repo@explicit" {
+		t.Fatalf("skills = %#v", got.Requires.Skills)
 	}
 }

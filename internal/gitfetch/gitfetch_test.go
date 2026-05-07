@@ -116,6 +116,49 @@ func TestClassifyCloneErrorAuth(t *testing.T) {
 	}
 }
 
+func TestGitHubTokenEnvPrecedence(t *testing.T) {
+	t.Setenv("SKIT_GITHUB_TOKEN", "skit-token")
+	t.Setenv("GITHUB_TOKEN", "github-token")
+	t.Setenv("GH_TOKEN", "gh-token")
+	if got := githubToken(context.Background()); got != "skit-token" {
+		t.Fatalf("token = %q", got)
+	}
+}
+
+func TestGitEnvAddsGitHubAuthHeader(t *testing.T) {
+	t.Setenv("SKIT_GITHUB_TOKEN", "skit-token")
+	env := gitEnv(context.Background())
+	if !containsEnv(env, "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader") {
+		t.Fatalf("missing git config key: %#v", env)
+	}
+	if !containsEnv(env, "GIT_CONFIG_VALUE_0=AUTHORIZATION: bearer skit-token") {
+		t.Fatalf("missing auth header: %#v", env)
+	}
+}
+
+func TestGitHubHTTPSAuthRetryPredicates(t *testing.T) {
+	t.Setenv("SKIT_GITHUB_TOKEN", "bad-token")
+	err := errors.New("remote: repository not found")
+	if !isGitHubHTTPSURL("https://github.com/owner/repo.git") {
+		t.Fatal("expected GitHub HTTPS URL")
+	}
+	if !shouldRetryWithGitHubAuth(context.Background(), err) {
+		t.Fatal("expected auth failure to retry with token")
+	}
+	if isGitHubHTTPSURL("https://gitlab.com/owner/repo.git") {
+		t.Fatal("should not match non-GitHub URL")
+	}
+}
+
+func containsEnv(env []string, want string) bool {
+	for _, item := range env {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
 func git(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)

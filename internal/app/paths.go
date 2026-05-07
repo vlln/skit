@@ -1,16 +1,9 @@
 package app
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/vlln/skit/internal/hash"
-	"github.com/vlln/skit/internal/lockfile"
-	"github.com/vlln/skit/internal/skill"
-	"github.com/vlln/skit/internal/store"
 )
 
 func cleanCWD(cwd string) string {
@@ -24,24 +17,11 @@ func cleanCWD(cwd string) string {
 	return got
 }
 
-func storePath(paths store.Paths, entry lockfile.Entry) string {
-	return storePathFor(paths.Root, entry.Hashes.Tree, entry.Name)
-}
-
-func storePathFor(root, treeHash, name string) string {
-	return filepath.Join(root, treeHash, name)
-}
-
-func activePath(paths store.Paths, entry lockfile.Entry) string {
-	return filepath.Join(paths.Active, entry.Name)
-}
-
-func activate(paths store.Paths, entry lockfile.Entry, target string, force bool) (string, error) {
-	return activateInDir(paths.Active, entry, target, force)
-}
-
-func activateInDir(activeDir string, entry lockfile.Entry, target string, force bool) (string, error) {
-	path := filepath.Join(activeDir, entry.Name)
+func activateNameInDir(activeDir, name, target string, force bool) (string, error) {
+	path, err := safeChild(activeDir, name)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return "", err
 	}
@@ -89,78 +69,4 @@ func samePath(a, b string) bool {
 		return a == b
 	}
 	return aa == bb
-}
-
-func verifyStoreEntry(paths store.Paths, entry lockfile.Entry) error {
-	path := storePath(paths, entry)
-	parsed, err := skill.ParseDir(path)
-	if err != nil {
-		return err
-	}
-	hashes, err := hash.Tree(parsed.Root, parsed.File)
-	if err != nil {
-		return err
-	}
-	if hashes.Tree != entry.Hashes.Tree || hashes.SkillMD != entry.Hashes.SkillMD {
-		return fmt.Errorf("hash mismatch restoring %q", entry.Name)
-	}
-	return nil
-}
-func writeLock(paths store.Paths, scope Scope, cwd string, lock lockfile.Lock) error {
-	if err := lockfile.Write(paths.Lock, lock); err != nil {
-		return err
-	}
-	if scope == Project {
-		if err := lockfile.Write(projectLockIndexPath(paths.Root, paths.Lock), lock); err != nil {
-			return err
-		}
-		if err := writeProjectLockIndexMeta(paths.Root, paths.Lock, cwd); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func projectLockIndexPath(storeRoot, lockPath string) string {
-	abs := lockPath
-	if got, err := filepath.Abs(lockPath); err == nil {
-		abs = got
-	}
-	return filepath.Join(filepath.Dir(storeRoot), "locks", hashPath(filepath.Clean(abs))+".lock")
-}
-
-func projectLockIndexMetaPath(lockPath string) string {
-	return lockPath + ".meta.json"
-}
-
-type projectLockIndexMeta struct {
-	Version int    `json:"version"`
-	CWD     string `json:"cwd"`
-	Lock    string `json:"lock"`
-}
-
-func writeProjectLockIndexMeta(storeRoot, lockPath, cwd string) error {
-	path := projectLockIndexMetaPath(projectLockIndexPath(storeRoot, lockPath))
-	abs := cwd
-	if got, err := filepath.Abs(cwd); err == nil {
-		abs = got
-	}
-	absLock := lockPath
-	if got, err := filepath.Abs(lockPath); err == nil {
-		absLock = got
-	}
-	raw, err := json.MarshalIndent(projectLockIndexMeta{Version: 1, CWD: filepath.Clean(abs), Lock: filepath.Clean(absLock)}, "", "  ")
-	if err != nil {
-		return err
-	}
-	raw = append(raw, '\n')
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, raw, 0644)
-}
-
-func hashPath(path string) string {
-	sum := sha256.Sum256([]byte(path))
-	return fmt.Sprintf("%x", sum)
 }

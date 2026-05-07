@@ -2,784 +2,321 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/vlln/skit/internal/lockfile"
 )
 
-func TestMain(m *testing.M) {
-	root, err := os.MkdirTemp("", "skit-cli-test-*")
-	if err != nil {
-		panic(err)
-	}
-	_ = os.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
-	_ = os.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
-	code := m.Run()
-	_ = os.RemoveAll(root)
-	os.Exit(code)
-}
+func TestInstallListRemoveCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
-func TestRunHelp(t *testing.T) {
-	var out, err bytes.Buffer
-	code := Run([]string{"--help"}, &out, &err)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0", code)
-	}
-	if !strings.Contains(out.String(), "Usage:") {
-		t.Fatalf("help output missing usage: %q", out.String())
-	}
-	if !strings.Contains(out.String(), "Skill Kit (Skill management CLI)") {
-		t.Fatalf("help output missing product name: %q", out.String())
-	}
-	if err.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", err.String())
-	}
-}
+	src := t.TempDir()
+	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "demo")
 
-func TestRunCommandHelp(t *testing.T) {
-	tests := []struct {
-		args []string
-		want string
-	}{
-		{[]string{"help", "remove"}, "Store snapshots are kept by default"},
-		{[]string{"gc", "--help"}, "Garbage collect the shared content-addressed store"},
-		{[]string{"update", "-h"}, "Incomplete imported entries are skipped"},
-		{[]string{"import-lock", "help"}, "Supported kinds:"},
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"install", src}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	for _, tt := range tests {
-		var out, err bytes.Buffer
-		code := Run(tt.args, &out, &err)
-		if code != 0 {
-			t.Fatalf("Run(%v) code = %d, stderr = %q", tt.args, code, err.String())
-		}
-		if !strings.Contains(out.String(), tt.want) {
-			t.Fatalf("Run(%v) output missing %q:\n%s", tt.args, tt.want, out.String())
-		}
-		if err.Len() != 0 {
-			t.Fatalf("Run(%v) stderr = %q, want empty", tt.args, err.String())
-		}
+	if !strings.Contains(stdout.String(), "installed demo") {
+		t.Fatalf("install stdout = %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "discover") || !strings.Contains(stderr.String(), "copy demo") {
+		t.Fatalf("install stderr should show progress, got %q", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"list"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("list code = %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "demo  active") {
+		t.Fatalf("list stdout = %q", stdout.String())
+	}
+	if strings.Contains(stdout.String(), src) {
+		t.Fatalf("list should not print source path by default: %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"remove", "demo"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("remove code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "removed demo") {
+		t.Fatalf("remove stdout = %q", stdout.String())
 	}
 }
 
-func TestRunVersion(t *testing.T) {
-	var out, err bytes.Buffer
-	code := Run([]string{"version"}, &out, &err)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0", code)
+func TestInstallNameCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	src := t.TempDir()
+	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "upstream")
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"install", src, "--name", "local"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if !strings.HasPrefix(out.String(), "skit ") {
-		t.Fatalf("version output = %q", out.String())
+	if !strings.Contains(stdout.String(), "installed local") {
+		t.Fatalf("install stdout = %q", stdout.String())
 	}
 }
 
-func TestRunVersionCheckReportsUpdate(t *testing.T) {
-	oldVersion := version
-	version = "0.1.0"
-	t.Cleanup(func() { version = oldVersion })
-	t.Setenv("SKIT_UPDATE_CHECK_CACHE", filepath.Join(t.TempDir(), "update-check.json"))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tag_name":"v0.2.0","html_url":"https://example.com/skit/releases/v0.2.0"}`))
-	}))
-	defer server.Close()
-	t.Setenv("SKIT_UPDATE_CHECK_URL", server.URL)
+func TestListAllCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	t.Chdir(cwd)
 
-	var out, err bytes.Buffer
-	code := Run([]string{"version", "--check"}, &out, &err)
-	if code != 0 {
-		t.Fatalf("code = %d, stderr = %q", code, err.String())
+	writeCLITestSkill(t, filepath.Join(cwd, ".agents", "skills", "external-skill", "SKILL.md"), "external-skill")
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"list"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("list code = %d stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(out.String(), "skit 0.1.0") {
-		t.Fatalf("stdout = %q", out.String())
+	if !strings.Contains(stdout.String(), "No skills installed.") {
+		t.Fatalf("default list stdout = %q", stdout.String())
 	}
-	if !strings.Contains(err.String(), "update available: skit v0.2.0 is available") {
-		t.Fatalf("stderr = %q", err.String())
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"list", "--all"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("list --all code = %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "external\nexternal-skill  ") {
+		t.Fatalf("list --all stdout = %q", stdout.String())
 	}
 }
 
-func TestUnknownFlagErrors(t *testing.T) {
-	var out, err bytes.Buffer
-	code := Run([]string{"install", "--skil", "demo", "./demo"}, &out, &err)
-	if code != 2 {
-		t.Fatalf("code = %d, want 2", code)
+func TestSearchOutputIsCompact(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	src := t.TempDir()
+	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "demo")
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"search", "demo", "--source", src}, &stdout, &stderr); code != 0 {
+		t.Fatalf("search code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(err.String(), "unknown flag --skil") {
-		t.Fatalf("stderr = %q", err.String())
+	if !strings.Contains(stdout.String(), src) {
+		t.Fatalf("search stdout = %q", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "Install with") || strings.Contains(stdout.String(), "install: skit install") {
+		t.Fatalf("search output should not include repeated install hints: %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "use: skit install <source@skill>") {
+		t.Fatalf("search output should include one compact install hint: %q", stdout.String())
 	}
 }
 
-func TestListJSON(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "demo"), "demo")
+func TestSourcesAddListRemoveCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
+	src := t.TempDir()
+	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "demo")
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"sources"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("sources code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"list", "--json"}, &out, &errOut); code != 0 {
-		t.Fatalf("list code = %d, stderr = %q", code, errOut.String())
+	if !strings.Contains(stdout.String(), "skills-sh") {
+		t.Fatalf("default sources stdout = %q", stdout.String())
 	}
-	var entries []lockfile.Entry
-	if err := json.Unmarshal(out.Bytes(), &entries); err != nil {
-		t.Fatalf("json = %q: %v", out.String(), err)
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"sources", "add", "local-test", "repo", src}, &stdout, &stderr); code != 0 {
+		t.Fatalf("sources add code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if len(entries) != 1 || entries[0].Name != "demo" {
-		t.Fatalf("entries = %#v", entries)
+	if !strings.Contains(stdout.String(), "added local-test") {
+		t.Fatalf("sources add stdout = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"search", "demo", "--source", "local-test"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("search named source code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "test skill") {
+		t.Fatalf("search named source stdout = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"sources", "remove", "local-test"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("sources remove code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "removed local-test") {
+		t.Fatalf("sources remove stdout = %q", stdout.String())
 	}
 }
 
-func TestListStoreCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "store-cli"), "store-cli")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./store-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"list", "--store"}, &out, &errOut); code != 0 {
-		t.Fatalf("list --store code = %d, stderr = %q", code, errOut.String())
-	}
-	fields := strings.Fields(out.String())
-	if len(fields) < 3 {
-		t.Fatalf("list --store output = %q", out.String())
-	}
-	if !strings.Contains(out.String(), "NAME") || !strings.Contains(out.String(), "TREE") || !strings.Contains(out.String(), "USE") {
-		t.Fatalf("list --store output missing header: %q", out.String())
-	}
-	if !strings.Contains(out.String(), "store-cli") || !strings.Contains(out.String(), "active,locked") {
-		t.Fatalf("list --store output = %q", out.String())
-	}
-	if strings.Contains(out.String(), ".local/share/skit/store") {
-		t.Fatalf("list --store should not print fixed store path: %q", out.String())
-	}
-	for _, field := range fields {
-		if strings.HasPrefix(field, "sha256-") {
-			t.Fatalf("list --store should not print hash algorithm prefix %q in %q", field, out.String())
-		}
-		if strings.Contains(field, "sha256-") {
-			t.Fatalf("list --store should not print hash algorithm prefix in %q", out.String())
-		}
-	}
-
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"list", "--store", "--global"}, &out, &errOut); code != 2 {
-		t.Fatalf("list --store --global code = %d, want 2", code)
-	}
-	if !strings.Contains(errOut.String(), "--global is not supported with --store") {
-		t.Fatalf("stderr = %q", errOut.String())
-	}
-
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"list", "--store", "--locks", "store-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("list --store --locks code = %d, stderr = %q", code, errOut.String())
-	}
-	if !strings.Contains(out.String(), "LOCKS") || !strings.Contains(out.String(), "project") {
-		t.Fatalf("list --store --locks output = %q", out.String())
-	}
-}
-
-func TestInspectJSON(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "demo"), "demo")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"inspect", "demo", "--json"}, &out, &errOut); code != 0 {
-		t.Fatalf("inspect code = %d, stderr = %q", code, errOut.String())
-	}
-	var result struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
-		t.Fatalf("json = %q: %v", out.String(), err)
-	}
-	if result.Name != "demo" {
-		t.Fatalf("result = %#v", result)
-	}
-}
-
-func TestSearchJSON(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-		  "skills": [
-		    {"id":"skill-creator","name":"skill-creator","source":"openclaw/openclaw","installs":42}
-		  ]
-		}`))
-	}))
-	defer server.Close()
-	t.Setenv("SKIT_SEARCH_API_URL", server.URL)
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"search", "skill", "create", "--json"}, &out, &errOut); code != 0 {
-		t.Fatalf("search code = %d, stderr = %q", code, errOut.String())
-	}
-	var results []struct {
-		Name   string `json:"name"`
-		Source string `json:"source"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &results); err != nil {
-		t.Fatalf("json = %q: %v", out.String(), err)
-	}
-	if len(results) != 1 || results[0].Name != "skill-creator" || results[0].Source != "openclaw/openclaw" {
-		t.Fatalf("results = %#v", results)
-	}
-}
-
-func TestSearchTextIsCompact(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-		  "skills": [
-		    {"id":"skill-creator","name":"skill-creator","source":"openclaw/openclaw","installs":42},
-		    {"id":"no-source","name":"fallback-skill","source":"","installs":0}
-		  ]
-		}`))
-	}))
-	defer server.Close()
-	t.Setenv("SKIT_SEARCH_API_URL", server.URL)
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"search", "skill", "create"}, &out, &errOut); code != 0 {
-		t.Fatalf("search code = %d, stderr = %q", code, errOut.String())
-	}
-	got := out.String()
-	if strings.Count(got, "Install with: skit install <source@skill>") != 1 {
-		t.Fatalf("install hint count wrong: %q", got)
-	}
-	if strings.Contains(got, "  skit install ") {
-		t.Fatalf("per-result install command still present: %q", got)
-	}
-	if !strings.Contains(got, "openclaw/openclaw@skill-creator\t42 installs\thttps://skills.sh/skill-creator") {
-		t.Fatalf("missing compact result line: %q", got)
-	}
-	if !strings.Contains(got, "no-source@fallback-skill\thttps://skills.sh/no-source") {
-		t.Fatalf("missing slug fallback result line: %q", got)
-	}
-}
-
-func TestSearchSourceText(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkillWithBody(t, filepath.Join(project, "repo", "skills", "pdf-tools"), "---\nname: pdf-tools\ndescription: Extract PDF files.\n---\n# PDF tools\n")
-	writeCLITestSkillWithBody(t, filepath.Join(project, "repo", "skills", "deploy-tools"), "---\nname: deploy-tools\ndescription: Deploy services.\n---\n# Deploy tools\n")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"search", "pdf", "--source", "./repo"}, &out, &errOut); code != 0 {
-		t.Fatalf("search code = %d, stderr = %q", code, errOut.String())
-	}
-	got := out.String()
-	if !strings.Contains(got, "repo/skills/pdf-tools\tExtract PDF files.\tskills/pdf-tools") {
-		t.Fatalf("missing source result: %q", got)
-	}
-	if strings.Contains(got, "deploy-tools") {
-		t.Fatalf("unexpected unmatched skill: %q", got)
-	}
-}
-
-func TestDoctorJSONReturnsErrorStatus(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkillWithBody(t, filepath.Join(project, "demo"), "---\nname: demo\ndescription: Test skill.\nmetadata:\n  skit:\n    requires:\n      bins:\n        - definitely-missing-skit-bin\n---\n# Demo\n")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"doctor", "--json"}, &out, &errOut); code != 1 {
-		t.Fatalf("doctor code = %d, want 1; stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	var result struct {
-		Errors []struct {
-			Code string `json:"code"`
-		} `json:"errors"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
-		t.Fatalf("json = %q: %v", out.String(), err)
-	}
-	if len(result.Errors) != 1 || result.Errors[0].Code != "missing-bin" {
-		t.Fatalf("result = %#v", result)
-	}
-}
-
-func TestInstallPrintsDependencyAndInspectJSONIncludesEdge(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "dep"), "dep")
-	writeCLITestSkillWithBody(t, filepath.Join(project, "parent"), "---\nname: parent\ndescription: Parent skill.\nmetadata:\n  skit:\n    dependencies:\n      - source: "+filepath.Join(project, "dep")+"\n---\n# Parent\n")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./parent"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	if !strings.Contains(out.String(), "added dependency dep ") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"inspect", "parent", "--json"}, &out, &errOut); code != 0 {
-		t.Fatalf("inspect code = %d, stderr = %q", code, errOut.String())
-	}
-	var inspected struct {
-		Dependencies []struct {
-			Name string `json:"name"`
-		} `json:"dependencies"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &inspected); err != nil {
-		t.Fatalf("json = %q: %v", out.String(), err)
-	}
-	if len(inspected.Dependencies) != 1 || inspected.Dependencies[0].Name != "dep" {
-		t.Fatalf("inspected = %#v", inspected)
-	}
-}
-
-func TestInstallIgnoreDepsCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "dep"), "dep")
-	writeCLITestSkillWithBody(t, filepath.Join(project, "parent"), "---\nname: parent\ndescription: Parent skill.\nmetadata:\n  skit:\n    dependencies:\n      - source: "+filepath.Join(project, "dep")+"\n---\n# Parent\n")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "--ignore-deps", "./parent"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	if strings.Contains(out.String(), "added dependency") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-	if !strings.Contains(errOut.String(), "dependencies skipped for parent") {
-		t.Fatalf("stderr = %q", errOut.String())
-	}
-}
-
-func TestInstallTextOutputIsCompact(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	skillDir := filepath.Join(project, "demo")
-	writeCLITestSkill(t, skillDir, "demo")
-	scripts := filepath.Join(skillDir, "scripts")
-	if err := os.MkdirAll(scripts, 0755); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"one.sh", "two.sh"} {
-		path := filepath.Join(scripts, name)
-		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0755); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if strings.Contains(out.String(), "\nstore ") {
-		t.Fatalf("stdout should not print store path by default: %q", out.String())
-	}
-	if strings.Count(errOut.String(), "executable file") != 1 || !strings.Contains(errOut.String(), "2 executable files in Skill directory") {
-		t.Fatalf("stderr = %q", errOut.String())
-	}
-}
-
-func TestInstallAutomaticallyChecksForUpdate(t *testing.T) {
-	oldVersion := version
-	version = "0.1.0"
-	t.Cleanup(func() { version = oldVersion })
-	project := t.TempDir()
-	chdir(t, project)
-	t.Setenv("SKIT_UPDATE_CHECK_CACHE", filepath.Join(t.TempDir(), "update-check.json"))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tag_name":"v0.2.0","html_url":"https://example.com/skit/releases/v0.2.0"}`))
-	}))
-	defer server.Close()
-	t.Setenv("SKIT_UPDATE_CHECK_URL", server.URL)
-	writeCLITestSkill(t, filepath.Join(project, "demo"), "demo")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	if !strings.Contains(errOut.String(), "update available: skit v0.2.0 is available") {
-		t.Fatalf("stderr = %q", errOut.String())
-	}
-}
-
-func TestRemoveMultipleAndUninstallAliasCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "one"), "one")
-	writeCLITestSkill(t, filepath.Join(project, "two"), "two")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./one", "./two"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"uninstall", "one", "two"}, &out, &errOut); code != 0 {
-		t.Fatalf("remove code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if !strings.Contains(out.String(), "removed one") || !strings.Contains(out.String(), "removed two") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-}
-
-func TestListAndRemoveAgentLockCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "agent-demo"), "agent-demo")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./agent-demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	raw, err := os.ReadFile(filepath.Join(project, ".agents", "skills", "skit.lock"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	claudeRoot := filepath.Join(project, ".claude", "skills")
-	if err := os.MkdirAll(claudeRoot, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(claudeRoot, "skit.lock"), raw, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"list", "--agent", "claude-code"}, &out, &errOut); code != 0 {
-		t.Fatalf("list --agent code = %d, stderr = %q", code, errOut.String())
-	}
-	if !strings.Contains(out.String(), "agent-demo") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"remove", "agent-demo", "--agent", "claude-code"}, &out, &errOut); code != 0 {
-		t.Fatalf("remove --agent code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"list", "--agent", "claude-code"}, &out, &errOut); code != 0 {
-		t.Fatalf("list --agent after remove code = %d, stderr = %q", code, errOut.String())
-	}
-	if strings.Contains(out.String(), "agent-demo") {
-		t.Fatalf("agent lock entry should be removed: %q", out.String())
-	}
-}
-
-func TestRemovePruneCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "prune-cli"), "prune-cli")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./prune-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"remove", "--prune", "prune-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("remove code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if !strings.Contains(out.String(), "removed prune-cli") || !strings.Contains(out.String(), "pruned ") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-}
-
-func TestRemoveStoreCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "store-rm-cli"), "store-rm-cli")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./store-rm-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"remove", "store-rm-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("remove code = %d, stderr = %q", code, errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"remove", "--store", "store-rm-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("remove --store code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if !strings.Contains(out.String(), "removed store store-rm-cli ") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"list", "--store", "store-rm-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("list --store code = %d, stderr = %q", code, errOut.String())
-	}
-	if strings.Contains(out.String(), "store-rm-cli") {
-		t.Fatalf("store entry should be removed: %q", out.String())
-	}
-}
-
-func TestGCCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "gc-cli"), "gc-cli")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./gc-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"remove", "gc-cli"}, &out, &errOut); code != 0 {
-		t.Fatalf("remove code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"gc"}, &out, &errOut); code != 0 {
-		t.Fatalf("gc code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if !strings.Contains(out.String(), "pruned ") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-}
-
-func TestInstallOptionalDependencyWarningCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkillWithBody(t, filepath.Join(project, "parent"), "---\nname: parent\ndescription: Parent skill.\nmetadata:\n  skit:\n    dependencies:\n      - source: "+filepath.Join(project, "missing")+"\n        optional: true\n---\n# Parent\n")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./parent"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	if !strings.Contains(errOut.String(), "optional dependency for parent failed") {
-		t.Fatalf("stderr = %q", errOut.String())
-	}
-}
-
-func TestInstallFullDepthCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "root-skill"), "root-skill")
-	writeCLITestSkill(t, filepath.Join(project, "packages", "tools", "skills", "deep-skill"), "deep-skill")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "--full-depth", "--all", "."}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if !strings.Contains(out.String(), "added root-skill ") || !strings.Contains(out.String(), "added deep-skill ") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-}
-
-func TestInstallSkillFlagAcceptsMultipleValuesOnce(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "repo", "one"), "one")
-	writeCLITestSkill(t, filepath.Join(project, "repo", "two"), "two")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./repo", "--skill", "one", "two"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if !strings.Contains(out.String(), "added one ") || !strings.Contains(out.String(), "added two ") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-}
-
-func TestInstallRejectsRepeatedSkillFlag(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkill(t, filepath.Join(project, "repo", "one"), "one")
-	writeCLITestSkill(t, filepath.Join(project, "repo", "two"), "two")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./repo", "--skill", "one", "--skill", "two"}, &out, &errOut); code != 2 {
-		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if !strings.Contains(errOut.String(), "--skill may only be provided once") {
-		t.Fatalf("stderr = %q", errOut.String())
-	}
-}
-
-func TestInstallInternalSkipPrintsReasonCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	writeCLITestSkillWithBody(t, filepath.Join(project, "repo", "internal-skill"), "---\nname: internal-skill\ndescription: Internal skill.\nmetadata:\n  internal: true\n---\n# Internal\n")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./repo"}, &out, &errOut); code != 1 {
-		t.Fatalf("install code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if !strings.Contains(errOut.String(), "internal skill") {
-		t.Fatalf("stderr = %q", errOut.String())
-	}
-}
-
-func TestUpdateCommand(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	path := filepath.Join(project, "demo")
-	writeCLITestSkill(t, path, "demo")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	writeCLITestSkillWithBody(t, path, "---\nname: demo\ndescription: Updated skill.\n---\n# Updated\n")
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"update", "demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("update code = %d, stderr = %q", code, errOut.String())
-	}
-	if !strings.Contains(out.String(), "updated demo ") {
-		t.Fatalf("stdout = %q", out.String())
-	}
-}
-
-func TestUpdateEmptyLockCLI(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"update"}, &out, &errOut); code != 1 {
-		t.Fatalf("update code = %d, stdout = %q stderr = %q", code, out.String(), errOut.String())
-	}
-	if !strings.Contains(errOut.String(), "no locked Skills to update") {
-		t.Fatalf("stderr = %q", errOut.String())
-	}
-}
-
-func TestUpdateJSON(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
-	path := filepath.Join(project, "demo")
-	writeCLITestSkill(t, path, "demo")
-
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"install", "./demo"}, &out, &errOut); code != 0 {
-		t.Fatalf("install code = %d, stderr = %q", code, errOut.String())
-	}
-	writeCLITestSkillWithBody(t, path, "---\nname: demo\ndescription: Updated skill.\n---\n# Updated\n")
-	out.Reset()
-	errOut.Reset()
-	if code := Run([]string{"update", "demo", "--json"}, &out, &errOut); code != 0 {
-		t.Fatalf("update code = %d, stderr = %q", code, errOut.String())
-	}
-	var result struct {
-		Entries []struct {
-			Name string `json:"name"`
-		} `json:"entries"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
-		t.Fatalf("json = %q: %v", out.String(), err)
-	}
-	if len(result.Entries) != 1 || result.Entries[0].Name != "demo" {
-		t.Fatalf("result = %#v", result)
-	}
-}
-
-func TestImportLockJSON(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
+func TestSearchJSONSourceCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	catalog := filepath.Join(t.TempDir(), "catalog.json")
 	raw := `{
-  "version": 1,
-  "skills": {
-    "demo": {
-      "source": "owner/repo",
-      "sourceType": "github",
-      "computedHash": "abc123"
+  "schema": "skit.catalog/v1",
+  "skills": [
+    {
+      "name": "image-review",
+      "target": "github:org/team-skills@image-review",
+      "description": "Review generated images.",
+      "keywords": ["vision"]
     }
-  }
+  ]
 }
 `
-	if err := os.WriteFile(filepath.Join(project, "skills-lock.json"), []byte(raw), 0644); err != nil {
+	if err := os.WriteFile(catalog, []byte(raw), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"import-lock", "skills", "--json"}, &out, &errOut); code != 0 {
-		t.Fatalf("import code = %d, stderr = %q", code, errOut.String())
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"sources", "add", "catalog", "json", catalog}, &stdout, &stderr); code != 0 {
+		t.Fatalf("sources add json code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	var result struct {
-		Entries []struct {
-			Name       string `json:"name"`
-			Incomplete bool   `json:"incomplete"`
-		} `json:"entries"`
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"search", "image", "--source", "catalog"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("search json source code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
-		t.Fatalf("json = %q: %v", out.String(), err)
-	}
-	if len(result.Entries) != 1 || result.Entries[0].Name != "demo" || !result.Entries[0].Incomplete {
-		t.Fatalf("result = %#v", result)
+	if !strings.Contains(stdout.String(), "github:org/team-skills@image-review") || !strings.Contains(stdout.String(), "Review generated images.") {
+		t.Fatalf("search json stdout = %q", stdout.String())
 	}
 }
 
-func TestInitCommand(t *testing.T) {
-	project := t.TempDir()
-	chdir(t, project)
+func TestCheckCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
-	var out, errOut bytes.Buffer
-	if code := Run([]string{"init", "new-skill"}, &out, &errOut); code != 0 {
-		t.Fatalf("code = %d, stderr = %q", code, errOut.String())
+	src := t.TempDir()
+	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "demo")
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"install", src}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install code = %d stderr=%q", code, stderr.String())
 	}
-	if _, err := os.Stat(filepath.Join(project, "new-skill", "SKILL.md")); err != nil {
+	if err := os.Remove(filepath.Join(home, ".agents", "skills", "demo")); err != nil {
 		t.Fatal(err)
 	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"check"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("check code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "missing-active-link") {
+		t.Fatalf("check stdout = %q", stdout.String())
+	}
 }
 
-func writeCLITestSkill(t *testing.T, dir, name string) {
+func TestInstallManifestCLI(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	src := t.TempDir()
+	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "demo")
+
+	firstData := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", firstData)
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"install", src, "--name", "shared-demo"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install code = %d stderr=%q", code, stderr.String())
+	}
+	manifest := filepath.Join(firstData, "skit", "manifest.json")
+
+	secondData := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", secondData)
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"install", manifest}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install manifest code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "installed shared-demo") {
+		t.Fatalf("install manifest stdout = %q", stdout.String())
+	}
+}
+
+func TestExportAndInstallDefaultManifestCLI(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+
+	src := t.TempDir()
+	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "demo")
+
+	firstData := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", firstData)
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"install", src}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install code = %d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"export"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("export code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "skit.json")); err != nil {
+		t.Fatalf("skit.json missing: %v", err)
+	}
+
+	secondData := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", secondData)
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"install", "--dry-run"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("dry-run code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "would install demo") {
+		t.Fatalf("dry-run stdout = %q", stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"install"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install default manifest code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "installed demo") {
+		t.Fatalf("install default manifest stdout = %q", stdout.String())
+	}
+}
+
+func TestInitCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"init", "demo"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("init code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "created demo-skill") {
+		t.Fatalf("init stdout = %q", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "demo-skill", "README.md")); err != nil {
+		t.Fatalf("README missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "demo-skill", "skills", "demo", "SKILL.md")); err != nil {
+		t.Fatalf("SKILL.md missing: %v", err)
+	}
+}
+
+func writeCLITestSkill(t *testing.T, path, name string) {
 	t.Helper()
-	writeCLITestSkillWithBody(t, dir, "---\nname: "+name+"\ndescription: Test skill.\n---\n# Test\n")
-}
-
-func chdir(t *testing.T, dir string) {
-	t.Helper()
-	old, err := os.Getwd()
-	if err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(old); err != nil {
-			t.Fatal(err)
-		}
-	})
-}
-
-func writeCLITestSkillWithBody(t *testing.T, dir, body string) {
-	t.Helper()
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0644); err != nil {
+	content := "---\nname: " + name + "\ndescription: test skill\n---\n# " + name + "\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -15,10 +15,11 @@ import (
 const defaultAPIBase = "https://skills.sh"
 
 type Result struct {
-	Name     string `json:"name"`
-	Slug     string `json:"slug"`
-	Source   string `json:"source"`
-	Installs int    `json:"installs"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Source      string `json:"source"`
+	Description string `json:"description"`
+	Installs    int    `json:"installs"`
 }
 
 type Client struct {
@@ -54,7 +55,11 @@ func (c Client) Search(ctx context.Context, query string, limit int) ([]Result, 
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	u, err := url.Parse(strings.TrimRight(c.BaseURL, "/") + "/api/search")
+	base := strings.TrimRight(c.BaseURL, "/")
+	if !strings.HasSuffix(base, "/api/search") {
+		base += "/api/search"
+	}
+	u, err := url.Parse(base)
 	if err != nil {
 		return nil, err
 	}
@@ -78,10 +83,11 @@ func (c Client) Search(ctx context.Context, query string, limit int) ([]Result, 
 	}
 	var payload struct {
 		Skills []struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Installs int    `json:"installs"`
-			Source   string `json:"source"`
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Installs    int    `json:"installs"`
+			Source      string `json:"source"`
 		} `json:"skills"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
@@ -96,10 +102,11 @@ func (c Client) Search(ctx context.Context, query string, limit int) ([]Result, 
 			continue
 		}
 		results = append(results, Result{
-			Name:     name,
-			Slug:     slug,
-			Source:   source,
-			Installs: item.Installs,
+			Name:        name,
+			Slug:        slug,
+			Source:      source,
+			Description: strings.TrimSpace(item.Description),
+			Installs:    item.Installs,
 		})
 	}
 	sort.SliceStable(results, func(i, j int) bool {

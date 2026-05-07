@@ -1,6 +1,8 @@
 dist/
 bin/
 .agent/
+skit
+demo-skill/
 
 *.test
 *.out

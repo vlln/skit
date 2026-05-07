@@ -88,6 +88,26 @@ func TestParseGitHubTreeURLKeepsSlashRefCandidate(t *testing.T) {
 	}
 }
 
+func TestParseSkillsShSkillURL(t *testing.T) {
+	src, err := Parse("https://skills.sh/jimliu/baoyu-skills/baoyu-compress-image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src.Type != GitHub || src.Locator != "jimliu/baoyu-skills" || src.URL != "https://github.com/jimliu/baoyu-skills.git" || src.Skill != "baoyu-compress-image" || src.Subpath != "" || !src.Implemented {
+		t.Fatalf("src = %+v", src)
+	}
+}
+
+func TestParseSkillsShRepoURL(t *testing.T) {
+	src, err := Parse("https://skills.sh/jimliu/baoyu-skills/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src.Type != GitHub || src.Locator != "jimliu/baoyu-skills" || src.Skill != "" || !src.Implemented {
+		t.Fatalf("src = %+v", src)
+	}
+}
+
 func TestParseGitLabRecognized(t *testing.T) {
 	src, err := Parse("https://gitlab.com/group/repo/-/tree/main/skills/foo")
 	if err != nil {

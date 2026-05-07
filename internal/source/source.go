@@ -207,6 +207,8 @@ func parseURL(raw string) (Source, error) {
 		return parseGitHubURL(u)
 	case "gitlab.com":
 		return parseGitLabURL(u)
+	case "skills.sh", "www.skills.sh":
+		return parseSkillsShURL(u)
 	default:
 		if strings.Contains(u.Path, "/-/tree/") {
 			return parseGitLabURL(u)
@@ -216,6 +218,32 @@ func parseURL(raw string) (Source, error) {
 		}
 		return Source{Type: WellKnown, Locator: raw, URL: raw, Implemented: false}, nil
 	}
+}
+
+func parseSkillsShURL(u *url.URL) (Source, error) {
+	parts := cleanParts(u.Path)
+	if len(parts) < 2 {
+		return Source{}, fmt.Errorf("empty skills.sh owner or repo")
+	}
+	owner, repo := parts[0], trimGitSuffix(parts[1])
+	locator := owner + "/" + repo
+	if !ownerRepoPattern.MatchString(locator) {
+		return Source{}, fmt.Errorf("unsupported skills.sh source %q", u.String())
+	}
+	src := Source{
+		Type:        GitHub,
+		Locator:     locator,
+		URL:         "https://github.com/" + locator + ".git",
+		Implemented: true,
+	}
+	if len(parts) >= 3 {
+		skill := parts[2]
+		if !skillNamePattern.MatchString(skill) {
+			return Source{}, fmt.Errorf("unsupported skills.sh skill %q", skill)
+		}
+		src.Skill = skill
+	}
+	return src, nil
 }
 
 func parseGitHubURL(u *url.URL) (Source, error) {

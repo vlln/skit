@@ -1,248 +1,174 @@
 package app
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
-	"github.com/vlln/skit/internal/lockfile"
-	"github.com/vlln/skit/internal/store"
+	"github.com/vlln/skit/internal/skill"
 )
 
 type ListRequest struct {
 	CWD    string
 	Scope  Scope
 	Agents []string
+	All    bool
 }
 
-func List(req ListRequest) ([]lockfile.Entry, error) {
-	paths, err := pathsForLockRequest(req.Scope, cleanCWD(req.CWD), req.Agents)
+type ListEntry struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Source      ManifestSource `json:"source"`
+	Path        string         `json:"path"`
+	Agents      []string       `json:"agents,omitempty"`
+	Active      []string       `json:"active,omitempty"`
+	Missing     bool           `json:"missing,omitempty"`
+	Managed     bool           `json:"managed,omitempty"`
+	Scope       string         `json:"scope,omitempty"`
+}
+
+func List(req ListRequest) ([]ListEntry, error) {
+	manifest, err := readManifest()
 	if err != nil {
 		return nil, err
 	}
-	lock, err := lockfile.Read(paths.Lock)
-	if err != nil {
-		return nil, err
-	}
-	names := lockfile.Names(lock)
-	out := make([]lockfile.Entry, 0, len(names))
-	for _, name := range names {
-		out = append(out, lock.Skills[name])
-	}
-	return out, nil
-}
-
-func pathsForLockRequest(scope Scope, cwd string, agents []string) (store.Paths, error) {
-	if len(agents) == 0 {
-		return store.PathsFor(scope, cwd), nil
-	}
-	if len(agents) > 1 {
-		return store.Paths{}, fmt.Errorf("expected at most one --agent value")
-	}
-	return pathsForAgent(scope, cwd, agents[0])
-}
-
-type ListStoreRequest struct {
-	CWD          string
-	Names        []string
-	IncludeLocks bool
-}
-
-type StoreListEntry struct {
-	Name  string   `json:"name"`
-	Tree  string   `json:"tree"`
-	Use   []string `json:"use"`
-	Locks []string `json:"locks,omitempty"`
-}
-
-func ListStore(req ListStoreRequest) ([]StoreListEntry, error) {
-	cwd := cleanCWD(req.CWD)
-	paths := store.PathsFor(Project, cwd)
-	refs := referencedStoreKeys(cwd)
-	active := activeStoreKeys(cwd)
-	locks := map[string][]string{}
-	if req.IncludeLocks {
-		locks = lockOwners(cwd)
-	}
-	nameFilter := stringSet(req.Names)
-	entries, err := storeEntries(paths.Root)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]StoreListEntry, 0, len(entries))
-	for _, entry := range entries {
-		if len(nameFilter) > 0 && !nameFilter[entry.name] {
-			continue
+	byName := map[string]*ListEntry{}
+	for _, name := range manifestNames(manifest) {
+		entry := manifest.Skills[name]
+		installDir := filepath.Join(dataRoot(), filepath.FromSlash(entry.Path))
+		item := ListEntry{
+			Name:        entry.Name,
+			Description: entry.Description,
+			Source:      entry.Source,
+			Path:        installDir,
+			Agents:      entry.Agents,
+			Managed:     true,
+			Scope:       "managed",
 		}
-		use := storeUse(entry.key, refs, active)
-		item := StoreListEntry{
-			Name: entry.name,
-			Tree: shortTreeHash(entry.treeHash),
-			Use:  use,
+		if _, err := os.Stat(filepath.Join(installDir, "SKILL.md")); err != nil {
+			item.Missing = true
 		}
-		if req.IncludeLocks {
-			item.Locks = locks[entry.key]
-		}
-		out = append(out, item)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Name != out[j].Name {
-			return out[i].Name < out[j].Name
-		}
-		return out[i].Tree < out[j].Tree
-	})
-	return out, nil
-}
-
-func stringSet(items []string) map[string]bool {
-	out := map[string]bool{}
-	for _, item := range items {
-		if item != "" {
-			out[item] = true
-		}
-	}
-	return out
-}
-
-func storeUse(key string, refs, active map[string]bool) []string {
-	var use []string
-	if active[key] {
-		use = append(use, "active")
-	}
-	if refs[key] {
-		use = append(use, "locked")
-	}
-	if len(use) == 0 {
-		return []string{"orphan"}
-	}
-	return use
-}
-
-func shortTreeHash(treeHash string) string {
-	const algorithmPrefix = "sha256-"
-	const hexLen = 12
-	if strings.HasPrefix(treeHash, algorithmPrefix) && len(treeHash) > len(algorithmPrefix)+hexLen {
-		return treeHash[len(algorithmPrefix) : len(algorithmPrefix)+hexLen]
-	}
-	if len(treeHash) > 18 {
-		return treeHash[:18]
-	}
-	return treeHash
-}
-
-func activeStoreKeys(cwd string) map[string]bool {
-	project := store.PathsFor(Project, cwd)
-	global := store.PathsFor(Global, cwd)
-	return activeStoreKeysForDirs(project.Root, []string{project.Active, global.Active})
-}
-
-func lockOwners(cwd string) map[string][]string {
-	owners := map[string][]string{}
-	paths := store.PathsFor(Project, cwd)
-	addLockOwners(owners, paths.Lock, "project")
-	addLockOwners(owners, store.PathsFor(Global, cwd).Lock, "global")
-
-	currentIndex := projectLockIndexPath(paths.Root, paths.Lock)
-	for _, lockPath := range knownProjectLocks(paths.Root) {
-		label := projectIndexLabel(lockPath)
-		if samePath(lockPath, currentIndex) {
-			label = lockOwnerLabel(projectLockIndexMeta{CWD: cwd, Lock: paths.Lock})
-		}
-		addLockOwners(owners, lockPath, label)
-	}
-	for key := range owners {
-		sort.Strings(owners[key])
-	}
-	return owners
-}
-
-func addLockOwners(owners map[string][]string, path, label string) {
-	lock, err := lockfile.Read(path)
-	if err != nil {
-		return
-	}
-	for _, entry := range lock.Skills {
-		if entry.Hashes.Tree == "" || entry.Name == "" || entry.Incomplete {
-			continue
-		}
-		key := storeKey(entry.Hashes.Tree, entry.Name)
-		owners[key] = appendUnique(owners[key], label)
-	}
-}
-
-func projectIndexLabel(path string) string {
-	if meta := readProjectLockIndexMeta(path); meta.CWD != "" {
-		return lockOwnerLabel(meta)
-	}
-	name := strings.TrimSuffix(filepath.Base(path), ".lock")
-	if len(name) > 12 {
-		name = name[:12]
-	}
-	if name == "" {
-		return "unknown-project"
-	}
-	return "unknown-project:" + name
-}
-
-func lockOwnerLabel(meta projectLockIndexMeta) string {
-	if meta.Lock == "" {
-		return filepath.Clean(meta.CWD)
-	}
-	return filepath.Clean(meta.CWD) + ":" + filepath.ToSlash(relLockPath(meta.CWD, meta.Lock))
-}
-
-func relLockPath(cwd, lockPath string) string {
-	rel, err := filepath.Rel(cwd, lockPath)
-	if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." || filepath.IsAbs(rel) {
-		return lockPath
-	}
-	return rel
-}
-
-func readProjectLockIndexMeta(lockPath string) projectLockIndexMeta {
-	raw, err := os.ReadFile(projectLockIndexMetaPath(lockPath))
-	if err != nil {
-		return projectLockIndexMeta{}
-	}
-	var meta projectLockIndexMeta
-	if json.Unmarshal(raw, &meta) != nil || meta.Version != 1 {
-		return projectLockIndexMeta{}
-	}
-	return meta
-}
-
-func activeStoreKeysForDirs(storeRoot string, dirs []string) map[string]bool {
-	keys := map[string]bool{}
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
+		dirs, err := manifestActiveDirs(entry.Agents)
 		if err != nil {
+			return nil, err
+		}
+		for _, dir := range dirs {
+			link := filepath.Join(dir, name)
+			if linkPointsTo(link, installDir) {
+				item.Active = append(item.Active, link)
+			}
+		}
+		byName[item.Name] = &item
+	}
+	if req.All {
+		if err := scanVisibleSkills(req, byName); err != nil {
+			return nil, err
+		}
+	}
+	out := make([]ListEntry, 0, len(byName))
+	for _, entry := range byName {
+		sort.Strings(entry.Active)
+		sort.Strings(entry.Agents)
+		out = append(out, *entry)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func scanVisibleSkills(req ListRequest, byName map[string]*ListEntry) error {
+	for _, root := range listAllRoots(req.CWD) {
+		entries, err := os.ReadDir(root.Dir)
+		if os.IsNotExist(err) {
 			continue
+		}
+		if err != nil {
+			return err
 		}
 		for _, entry := range entries {
-			if entry.Type()&os.ModeSymlink == 0 {
+			if !entry.IsDir() {
 				continue
 			}
-			linkPath := filepath.Join(dir, entry.Name())
-			target, err := os.Readlink(linkPath)
+			dir := filepath.Join(root.Dir, entry.Name())
+			parsed, err := skill.ParseDirWithOptions(dir, skill.ParseOptions{AllowNameMismatch: true})
 			if err != nil {
 				continue
 			}
-			if !filepath.IsAbs(target) {
-				target = filepath.Join(dir, target)
+			name := entry.Name()
+			item, ok := byName[name]
+			if !ok {
+				item = &ListEntry{
+					Name:        name,
+					Description: parsed.Description,
+					Source:      ManifestSource{Type: "external", Locator: dir},
+					Path:        dir,
+					Scope:       root.Scope,
+				}
+				byName[name] = item
 			}
-			rel, err := filepath.Rel(storeRoot, filepath.Clean(target))
-			if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." || filepath.IsAbs(rel) {
-				continue
+			for _, agent := range root.Agents {
+				item.Agents = appendUnique(item.Agents, agent)
 			}
-			parts := strings.Split(filepath.ToSlash(rel), "/")
-			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-				continue
-			}
-			keys[storeKey(parts[0], parts[1])] = true
+			item.Active = appendUnique(item.Active, dir)
 		}
 	}
-	return keys
+	return nil
+}
+
+type listRoot struct {
+	Dir    string
+	Agents []string
+	Scope  string
+}
+
+func listAllRoots(cwd string) []listRoot {
+	if cwd == "" {
+		cwd = "."
+	}
+	byDir := map[string]*listRoot{}
+	add := func(dir, agent, scope string) {
+		clean := filepath.Clean(dir)
+		root, ok := byDir[clean]
+		if ok {
+			root.Agents = appendUnique(root.Agents, agent)
+			return
+		}
+		byDir[clean] = &listRoot{Dir: clean, Agents: []string{agent}, Scope: scope}
+	}
+	add(filepath.Join(userHome(), ".agents", "skills"), "universal", "global")
+	for _, agent := range sortedAgents() {
+		target := agentTargets[agent]
+		projectDir := target.Project
+		if !filepath.IsAbs(projectDir) {
+			projectDir = filepath.Join(cwd, projectDir)
+		}
+		add(projectDir, agent, "project")
+		add(target.Global(), agent, "global")
+	}
+	roots := make([]listRoot, 0, len(byDir))
+	for _, root := range byDir {
+		sort.Strings(root.Agents)
+		roots = append(roots, *root)
+	}
+	sort.Slice(roots, func(i, j int) bool { return roots[i].Dir < roots[j].Dir })
+	return roots
+}
+
+func sortedAgents() []string {
+	names := make([]string, 0, len(agentTargets))
+	for name := range agentTargets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func linkPointsTo(link, target string) bool {
+	got, err := os.Readlink(link)
+	if err != nil {
+		return false
+	}
+	if !filepath.IsAbs(got) {
+		got = filepath.Join(filepath.Dir(link), got)
+	}
+	return samePath(got, target)
 }

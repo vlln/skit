@@ -6,71 +6,72 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vlln/skit/internal/diagnose"
 	"github.com/vlln/skit/internal/gitfetch"
-	"github.com/vlln/skit/internal/lockfile"
-	"github.com/vlln/skit/internal/metadata"
 	"github.com/vlln/skit/internal/skill"
 	"github.com/vlln/skit/internal/source"
-	"github.com/vlln/skit/internal/store"
 )
 
 type AddRequest struct {
-	Context    context.Context
-	CWD        string
-	Scope      Scope
-	Source     string
-	Skill      string
-	Skills     []string
-	Agents     []string
-	All        bool
+	Context   context.Context
+	CWD       string
+	Scope     Scope
+	Source    string
+	Name      string
+	Skill     string
+	Skills    []string
+	Agents    []string
+	All       bool
+	FullDepth bool
+	Force     bool
+	Progress  func(string)
+
+	// Deprecated pre-1.0 flags.
 	IgnoreDeps bool
-	FullDepth  bool
 	NoActive   bool
-	Force      bool
 }
+
 type AddResult struct {
-	Entries              []lockfile.Entry `json:"entries"`
-	StorePaths           []string         `json:"storePaths,omitempty"`
-	DependencyEntries    []lockfile.Entry `json:"dependencyEntries,omitempty"`
-	DependencyStorePaths []string         `json:"dependencyStorePaths,omitempty"`
-	Warnings             []string         `json:"warnings,omitempty"`
-	ActivePaths          []string         `json:"activePaths,omitempty"`
+	Entries     []ManifestSkill `json:"entries"`
+	ActivePaths []string        `json:"activePaths,omitempty"`
+	Warnings    []string        `json:"warnings,omitempty"`
 }
 
 func Add(req AddRequest) (AddResult, error) {
 	var result AddResult
-	cwd := cleanCWD(req.CWD)
-	paths := store.PathsFor(req.Scope, cwd)
 	src, err := source.Parse(req.Source, source.WithSkill(req.Skill))
 	if err != nil {
 		return result, err
+	}
+	progress := func(message string) {
+		if req.Progress != nil {
+			req.Progress(message)
+		}
 	}
 	wanted := req.Skills
 	if req.Skill != "" {
 		wanted = append([]string{req.Skill}, wanted...)
 	}
 	if src.Skill != "" && len(wanted) > 0 {
-		src.Warnings = append(src.Warnings, "inline skill selector ignored because --skill was provided")
+		result.Warnings = append(result.Warnings, "inline skill selector ignored because --skill was provided")
 	}
 	if src.Skill != "" && len(wanted) == 0 {
 		wanted = []string{src.Skill}
 	}
+
 	workRoot := src.Locator
 	cleanup := func() {}
-	resolvedRef := ""
 	if isGitProvider(src.Type) {
 		if err := resolveTreeSource(ctx(req.Context), &src); err != nil {
 			return result, err
 		}
-		clone, err := gitfetch.CloneWithOptions(ctx(req.Context), src.URL, src.Ref, paths.Tmp, cloneOptions(src))
+		progress("fetch " + src.Locator)
+		clone, err := gitfetch.CloneWithOptions(ctx(req.Context), src.URL, src.Ref, tmpRoot(), cloneOptions(src))
 		if err != nil {
 			return result, err
 		}
 		workRoot = clone.Dir
 		src.Ref = clone.Ref
-		resolvedRef = clone.ResolvedRef
-		cleanup = func() { _ = gitfetch.RemoveUnder(clone.Dir, paths.Tmp) }
+		cleanup = func() { _ = gitfetch.RemoveUnder(clone.Dir, tmpRoot()) }
 		defer cleanup()
 	} else if src.Type != source.Local {
 		return result, fmt.Errorf("provider %q is not implemented for install yet", src.Type)
@@ -80,14 +81,15 @@ func Add(req AddRequest) (AddResult, error) {
 	if src.Subpath != "" {
 		discoverRoot = filepath.Join(workRoot, filepath.FromSlash(src.Subpath))
 	}
+	progress("discover")
 	discoverOpts := parseOptionsForSource(src)
 	discoverOpts.IncludeInternal = len(wanted) > 0
 	discoverOpts.FullDepth = req.FullDepth
+	discoverOpts.IgnoreInvalid = len(wanted) > 0
 	discovered, warnings, err := skill.DiscoverWithOptions(discoverRoot, discoverOpts)
 	if err != nil {
 		return result, err
 	}
-	result.Warnings = append(result.Warnings, warnings...)
 	selected, err := selectSkills(discovered, wanted, req.All)
 	if err != nil {
 		if len(result.Warnings) > 0 {
@@ -95,183 +97,123 @@ func Add(req AddRequest) (AddResult, error) {
 		}
 		return result, err
 	}
+	if len(wanted) > 0 {
+		for _, parsed := range selected {
+			result.Warnings = append(result.Warnings, parsed.Warnings...)
+		}
+	} else {
+		result.Warnings = append(result.Warnings, warnings...)
+	}
+	if req.Name != "" && len(selected) != 1 {
+		return result, fmt.Errorf("--name can only be used when installing exactly one skill")
+	}
 
-	lock, err := lockfile.Read(paths.Lock)
+	manifest, err := readManifest()
 	if err != nil {
 		return result, err
 	}
-	activeDirs, err := activeDirs(paths, req.Scope, cwd, req.Agents)
+	agents := uniqueAgents(req.Agents)
+	activeDirs, err := manifestActiveDirs(agents)
 	if err != nil {
 		return result, err
-	}
-	session := addSession{
-		ctx:        ctx(req.Context),
-		paths:      paths,
-		lock:       lock,
-		result:     &result,
-		ignoreDeps: req.IgnoreDeps,
-		noActive:   req.NoActive,
-		force:      req.Force,
-		visiting:   map[string]bool{},
-		activeDirs: activeDirs,
 	}
 	for _, parsed := range selected {
-		entry, storePath, err := session.installParsed(src, parsed, workRoot, resolvedRef)
+		name := parsed.Name
+		if req.Name != "" {
+			name = req.Name
+		}
+		progress("copy " + name)
+		installDir, err := safeChild(installedSkillsRoot(), name)
 		if err != nil {
 			return result, err
 		}
+		if err := copySkillTree(parsed.Root, installDir); err != nil {
+			return result, err
+		}
+		for _, dir := range activeDirs {
+			activePath, err := activateNameInDir(dir, name, installDir, req.Force)
+			if err != nil {
+				return result, err
+			}
+			result.ActivePaths = append(result.ActivePaths, activePath)
+		}
+		entry := ManifestSkill{
+			Name:        name,
+			Description: parsed.Description,
+			Source: ManifestSource{
+				Type:    string(src.Type),
+				Locator: src.Locator,
+				URL:     src.URL,
+				Ref:     src.Ref,
+				Subpath: sourceSubpath(src, parsed.Root, workRoot),
+				Skill:   parsed.Name,
+			},
+			Path:   filepath.ToSlash(filepath.Join("skills", name)),
+			Agents: agents,
+		}
+		manifest.Skills[name] = entry
 		result.Entries = append(result.Entries, entry)
-		result.StorePaths = append(result.StorePaths, storePath)
 	}
-	if err := writeLock(paths, req.Scope, cleanCWD(req.CWD), session.lock); err != nil {
+	if err := writeManifestFile(manifest); err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-type addSession struct {
-	ctx        context.Context
-	paths      store.Paths
-	lock       lockfile.Lock
-	result     *AddResult
-	ignoreDeps bool
-	noActive   bool
-	force      bool
-	replace    bool
-	visiting   map[string]bool
-	activeDirs []string
-}
-
-func (s *addSession) installParsed(src source.Source, parsed skill.Skill, workRoot, resolvedRef string) (lockfile.Entry, string, error) {
-	if s.visiting[parsed.Name] {
-		return lockfile.Entry{}, "", fmt.Errorf("circular dependency involving %q", parsed.Name)
-	}
-	s.visiting[parsed.Name] = true
-	defer delete(s.visiting, parsed.Name)
-
-	var dependencyEdges []lockfile.Dependency
-	var dependencyWarnings []string
-	if len(parsed.Skit.Dependencies) > 0 {
-		if s.ignoreDeps {
-			warning := fmt.Sprintf("dependencies skipped for %s", parsed.Name)
-			dependencyWarnings = appendUnique(dependencyWarnings, warning)
-			s.result.Warnings = appendUnique(s.result.Warnings, warning)
+func manifestActiveDirs(agents []string) ([]string, error) {
+	var dirs []string
+	seen := map[string]bool{}
+	for _, agent := range agents {
+		var dir string
+		if agent == "universal" {
+			dir = filepath.Join(userHome(), ".agents", "skills")
 		} else {
-			edges, warnings, err := s.installDependencies(parsed)
+			got, err := agentActiveDir(Global, "", agent)
 			if err != nil {
-				return lockfile.Entry{}, "", err
+				return nil, err
 			}
-			dependencyEdges = edges
-			dependencyWarnings = warnings
+			dir = got
 		}
-	}
-
-	installed, err := store.InstallSnapshot(s.paths, parsed)
-	if err != nil {
-		return lockfile.Entry{}, "", err
-	}
-	entry := entryFor(src, parsed, installed.Hashes.Tree, installed.Hashes.SkillMD, workRoot)
-	entry.Source.ResolvedRef = resolvedRef
-	entry.Dependencies = dependencyEdges
-	safetyWarnings, err := diagnose.SafetyWarnings(parsed.Root)
-	if err != nil {
-		return lockfile.Entry{}, "", err
-	}
-	entry.Warnings = appendUnique(entry.Warnings, parsed.Warnings...)
-	entry.Warnings = appendUnique(entry.Warnings, src.Warnings...)
-	entry.Warnings = appendUnique(entry.Warnings, dependencyWarnings...)
-	entry.Warnings = appendUnique(entry.Warnings, safetyWarnings...)
-	if s.replace {
-		s.lock = lockfile.Put(s.lock, entry)
-	} else {
-		s.lock, err = lockfile.Add(s.lock, entry)
-		if err != nil {
-			return lockfile.Entry{}, "", err
-		}
-	}
-	if !s.noActive {
-		for _, dir := range s.activeDirs {
-			activePath, err := activateInDir(dir, entry, installed.Path, s.force)
-			if err != nil {
-				return lockfile.Entry{}, "", err
-			}
-			s.result.ActivePaths = append(s.result.ActivePaths, activePath)
-		}
-	}
-	s.result.Warnings = appendUnique(s.result.Warnings, src.Warnings...)
-	s.result.Warnings = appendUnique(s.result.Warnings, safetyWarnings...)
-	return entry, installed.Path, nil
-}
-
-func (s *addSession) installDependencies(parent skill.Skill) ([]lockfile.Dependency, []string, error) {
-	deps, err := normalizeDependencies(parent.Skit.Dependencies)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s dependencies: %w", parent.Name, err)
-	}
-	var edges []lockfile.Dependency
-	var warnings []string
-	for _, dep := range deps {
-		entry, err := s.installDependency(dep)
-		if err != nil {
-			if dep.Optional {
-				warning := fmt.Sprintf("optional dependency for %s failed: %v", parent.Name, err)
-				warnings = appendUnique(warnings, warning)
-				s.result.Warnings = appendUnique(s.result.Warnings, warning)
-				continue
-			}
-			return nil, nil, fmt.Errorf("dependency for %s failed: %w", parent.Name, err)
-		}
-		edges = append(edges, lockfile.Dependency{Name: entry.Name, Source: entry.Source, Optional: dep.Optional})
-	}
-	return edges, warnings, nil
-}
-
-func (s *addSession) installDependency(dep metadata.Dependency) (lockfile.Entry, error) {
-	src, err := source.Parse(dep.Source, source.WithSkill(dep.Skill))
-	if err != nil {
-		return lockfile.Entry{}, err
-	}
-	if dep.Ref != "" {
-		if src.Ref != "" && src.Ref != dep.Ref {
-			return lockfile.Entry{}, fmt.Errorf("dependency ref conflict for %s", dep.Source)
-		}
-		src.Ref = dep.Ref
-	}
-	parsed, srcOut, workRoot, resolvedRef, cleanup, err := resolveOneForInstall(s.ctx, s.paths, src)
-	if err != nil {
-		return lockfile.Entry{}, err
-	}
-	defer cleanup()
-	entry, storePath, err := s.installParsed(srcOut, parsed, workRoot, resolvedRef)
-	if err == nil {
-		s.result.DependencyEntries = append(s.result.DependencyEntries, entry)
-		s.result.DependencyStorePaths = append(s.result.DependencyStorePaths, storePath)
-	}
-	return entry, err
-}
-
-func normalizeDependencies(deps []metadata.Dependency) ([]metadata.Dependency, error) {
-	seen := map[string]metadata.Dependency{}
-	var out []metadata.Dependency
-	for _, dep := range deps {
-		key := dep.Source + "\x00" + dep.Skill
-		if prev, ok := seen[key]; ok {
-			if prev.Ref != dep.Ref {
-				return nil, fmt.Errorf("conflicting refs for dependency %s", dep.Source)
-			}
-			if prev.Optional != dep.Optional {
-				prev.Optional = prev.Optional && dep.Optional
-				seen[key] = prev
-			}
+		clean := filepath.Clean(dir)
+		if seen[clean] {
 			continue
 		}
-		seen[key] = dep
-		out = append(out, dep)
+		seen[clean] = true
+		dirs = append(dirs, clean)
 	}
-	for i, dep := range out {
-		if normalized, ok := seen[dep.Source+"\x00"+dep.Skill]; ok {
-			out[i] = normalized
+	if len(dirs) == 0 {
+		dirs = append(dirs, filepath.Join(userHome(), ".agents", "skills"))
+	}
+	return dirs, nil
+}
+
+func selectSkills(skills []skill.Skill, wanted []string, all bool) ([]skill.Skill, error) {
+	if all {
+		if len(skills) == 0 {
+			return nil, fmt.Errorf("no skills found")
 		}
+		return skills, nil
 	}
-	return out, nil
+	if len(wanted) > 0 {
+		byName := map[string]skill.Skill{}
+		for _, s := range skills {
+			byName[s.Name] = s
+		}
+		var selected []skill.Skill
+		for _, name := range wanted {
+			s, ok := byName[name]
+			if !ok {
+				return nil, fmt.Errorf("skill %q not found", name)
+			}
+			selected = append(selected, s)
+		}
+		return selected, nil
+	}
+	if len(skills) == 1 {
+		return skills, nil
+	}
+	if len(skills) == 0 {
+		return nil, fmt.Errorf("no skills found")
+	}
+	return nil, fmt.Errorf("source contains multiple skills; use source@skill, --skill <name...>, or --all")
 }

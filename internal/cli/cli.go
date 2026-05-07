@@ -7,9 +7,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/vlln/skit/internal/app"
-	"github.com/vlln/skit/internal/lockfile"
 	"github.com/vlln/skit/internal/updatecheck"
 )
 
@@ -54,6 +54,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return printCommandHelp("install", stdout, stderr)
 		}
 		return runInstall(args[1:], stdout, stderr)
+	case "sources":
+		if helpRequested(args[1:]) {
+			return printCommandHelp("sources", stdout, stderr)
+		}
+		return runSources(args[1:], stdout, stderr)
+	case "export", "bundle":
+		if helpRequested(args[1:]) {
+			return printCommandHelp("export", stdout, stderr)
+		}
+		return runExport(args[1:], stdout, stderr)
 	case "list", "ls":
 		if helpRequested(args[1:]) {
 			return printCommandHelp("list", stdout, stderr)
@@ -64,27 +74,15 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return printCommandHelp("remove", stdout, stderr)
 		}
 		return runRemove(args[1:], stdout, stderr)
-	case "gc":
-		if helpRequested(args[1:]) {
-			return printCommandHelp("gc", stdout, stderr)
-		}
-		return runGC(args[1:], stdout, stderr)
 	case "update":
 		if helpRequested(args[1:]) {
 			return printCommandHelp("update", stdout, stderr)
 		}
 		return runUpdate(args[1:], stdout, stderr)
-	case "inspect":
-		return runInspect(args[1:], stdout, stderr)
-	case "doctor":
-		return runDoctor(args[1:], stdout, stderr)
+	case "check", "doctor":
+		return runCheck(args[1:], stdout, stderr)
 	case "init":
 		return runInit(args[1:], stdout, stderr)
-	case "import-lock":
-		if helpRequested(args[1:]) {
-			return printCommandHelp("import-lock", stdout, stderr)
-		}
-		return runImportLock(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "skit: unknown command %q\n\n", args[0])
 		printHelp(stderr)
@@ -119,112 +117,78 @@ func printCommandHelp(command string, stdout, stderr io.Writer) int {
 	case "install":
 		fmt.Fprintln(stdout, "Usage:")
 		fmt.Fprintln(stdout, "  skit install [source...] [flags]")
+		fmt.Fprintln(stdout, "  skit install <manifest.json> [flags]")
+		fmt.Fprintln(stdout, "  skit install [flags]    # applies ./skit.json when present")
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Install sources into the content-addressed store, write skit.lock,")
-		fmt.Fprintln(stdout, "and create active symlinks unless --no-active is set. With no source,")
-		fmt.Fprintln(stdout, "restore active symlinks from skit.lock.")
+		fmt.Fprintln(stdout, "Install Skills into the local skit data directory and activate")
+		fmt.Fprintln(stdout, "them by linking from configured agent skill directories.")
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Useful flags:")
-		fmt.Fprintln(stdout, "  --project       Use .agents/skills in this project (default)")
-		fmt.Fprintln(stdout, "  -g, --global    Use ~/.agents/skills")
 		fmt.Fprintln(stdout, "  -a, --agent     Also activate for one or more supported agents")
 		fmt.Fprintln(stdout, "  -s, --skill     Select one or more Skills from one source")
+		fmt.Fprintln(stdout, "  --name          Install a single Skill under this local folder name")
 		fmt.Fprintln(stdout, "  --all           Install every discovered non-internal Skill")
 		fmt.Fprintln(stdout, "  --full-depth    Search recursively when installing a source")
-		fmt.Fprintln(stdout, "  --ignore-deps   Skip declared Skill dependencies")
-		fmt.Fprintln(stdout, "  --no-active     Write store and lock only")
 		fmt.Fprintln(stdout, "  --force         Replace an existing non-symlink active path")
+		fmt.Fprintln(stdout, "  --dry-run       Preview manifest installation without changing state")
 		fmt.Fprintln(stdout, "  --json          Print JSON")
+	case "sources":
+		fmt.Fprintln(stdout, "Usage:")
+		fmt.Fprintln(stdout, "  skit sources")
+		fmt.Fprintln(stdout, "  skit sources add <name> <type> <source>")
+		fmt.Fprintln(stdout, "  skit sources remove <name>")
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Manage search sources. Types: registry, repo, json, local.")
+	case "export", "bundle":
+		fmt.Fprintln(stdout, "Usage:")
+		fmt.Fprintln(stdout, "  skit export [path] [--json]")
+		fmt.Fprintln(stdout, "  skit bundle [path] [--json]")
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Write the current local manifest to a shareable file.")
+		fmt.Fprintln(stdout, "The default path is ./skit.json.")
 	case "list", "ls":
 		fmt.Fprintln(stdout, "Usage:")
-		fmt.Fprintln(stdout, "  skit list [flags]")
-		fmt.Fprintln(stdout, "  skit list --store [flags]")
+		fmt.Fprintln(stdout, "  skit list [--all] [flags]")
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "List Skills recorded in the selected skit.lock. Output shows")
-		fmt.Fprintln(stdout, "name, source locator, and resolved ref or tree hash.")
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "With --store, list snapshots in the shared content-addressed store.")
-		fmt.Fprintln(stdout, "Store output uses short tree IDs and a compact USE column:")
-		fmt.Fprintln(stdout, "locked, active, active,locked, or orphan.")
-		fmt.Fprintln(stdout, "Add --locks and optional names to show which locks reference snapshots.")
+		fmt.Fprintln(stdout, "List Skills recorded in the local skit manifest and their")
+		fmt.Fprintln(stdout, "active agent links. With --all, also scan supported agent")
+		fmt.Fprintln(stdout, "skill directories and show externally installed Skills.")
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Useful flags:")
-		fmt.Fprintln(stdout, "  --project       Read project lock (default)")
-		fmt.Fprintln(stdout, "  -g, --global    Read global lock")
-		fmt.Fprintln(stdout, "  -a, --agent     Read skit.lock from one agent active root")
-		fmt.Fprintln(stdout, "  --store         List shared store snapshots instead of lock entries")
-		fmt.Fprintln(stdout, "  --locks         With --store, show lock owners")
+		fmt.Fprintln(stdout, "  --all           Include Skills visible in supported agent directories")
 		fmt.Fprintln(stdout, "  --json          Print JSON")
 	case "remove", "rm", "uninstall":
 		fmt.Fprintln(stdout, "Usage:")
 		fmt.Fprintln(stdout, "  skit remove <name...> [flags]")
-		fmt.Fprintln(stdout, "  skit remove --all [flags]")
-		fmt.Fprintln(stdout, "  skit remove --store <name> [tree-prefix]")
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Remove Skills from the selected skit.lock and delete their active")
-		fmt.Fprintln(stdout, "symlinks. Store snapshots are kept by default because another project")
-		fmt.Fprintln(stdout, "or the global lock may still reference the same immutable content.")
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "--prune deletes the removed snapshot only when no known project or")
-		fmt.Fprintln(stdout, "global lock still references it. Use skit gc for bulk store cleanup.")
-		fmt.Fprintln(stdout, "--store removes an orphan store snapshot directly. It refuses locked")
-		fmt.Fprintln(stdout, "or active snapshots. tree-prefix may include or omit sha256-.")
+		fmt.Fprintln(stdout, "Remove installed Skills from the local manifest and active agent")
+		fmt.Fprintln(stdout, "links. With --agent, only deactivate that agent.")
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Useful flags:")
-		fmt.Fprintln(stdout, "  --project       Remove from project lock and active root (default)")
-		fmt.Fprintln(stdout, "  -g, --global    Remove from global lock and active root")
-		fmt.Fprintln(stdout, "  -a, --agent     Remove from one agent active root skit.lock")
-		fmt.Fprintln(stdout, "  --all           Remove every locked Skill in the selected scope")
-		fmt.Fprintln(stdout, "  --prune         Also delete unreferenced store snapshots")
-		fmt.Fprintln(stdout, "  --store         Remove an orphan store snapshot by name and optional tree prefix")
-	case "gc":
+		fmt.Fprintln(stdout, "  -a, --agent     Deactivate only the selected agent")
+		fmt.Fprintln(stdout, "  --keep          Keep the local Skill directory")
+	case "check", "doctor":
 		fmt.Fprintln(stdout, "Usage:")
-		fmt.Fprintln(stdout, "  skit gc [--json]")
+		fmt.Fprintln(stdout, "  skit check [--json]")
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Garbage collect the shared content-addressed store. skit scans known")
-		fmt.Fprintln(stdout, "project and global locks, keeps snapshots referenced by non-incomplete")
-		fmt.Fprintln(stdout, "lock entries, and removes unreferenced store directories.")
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "This is broader than remove --prune: remove --prune only considers")
-		fmt.Fprintln(stdout, "the snapshot just removed, while gc scans the whole store.")
+		fmt.Fprintln(stdout, "Check that manifest entries have local Skill directories and")
+		fmt.Fprintln(stdout, "active links pointing to them.")
 	case "update":
 		fmt.Fprintln(stdout, "Usage:")
 		fmt.Fprintln(stdout, "  skit update [name] [flags]")
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Refresh locked Skills from their recorded sources. Without name, update")
-		fmt.Fprintln(stdout, "all complete lock entries. Local sources are re-read and re-hashed;")
-		fmt.Fprintln(stdout, "mutable git refs such as branches resolve to their current commit.")
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Incomplete imported entries are skipped because they do not contain")
-		fmt.Fprintln(stdout, "enough information for reproducible restore; reinstall them with an")
-		fmt.Fprintln(stdout, "explicit source to make them complete.")
+		fmt.Fprintln(stdout, "Refresh installed Skills from their recorded sources. Without name,")
+		fmt.Fprintln(stdout, "update all manifest entries.")
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Useful flags:")
-		fmt.Fprintln(stdout, "  --project       Update project lock (default)")
-		fmt.Fprintln(stdout, "  -g, --global    Update global lock")
 		fmt.Fprintln(stdout, "  -a, --agent     Also refresh active links for selected agents")
-		fmt.Fprintln(stdout, "  --ignore-deps   Skip declared Skill dependencies")
 		fmt.Fprintln(stdout, "  --json          Print JSON")
-	case "import-lock":
+	case "init":
 		fmt.Fprintln(stdout, "Usage:")
-		fmt.Fprintln(stdout, "  skit import-lock <skills|clawhub> [flags]")
+		fmt.Fprintln(stdout, "  skit init <name>")
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Import lock files from compatible Skill ecosystems into skit.lock.")
-		fmt.Fprintln(stdout, "Imports are intentionally conservative: when the source lock lacks")
-		fmt.Fprintln(stdout, "skit tree hashes or source archives, entries are marked incomplete.")
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Supported kinds:")
-		fmt.Fprintln(stdout, "  skills   Read ./skills-lock.json")
-		fmt.Fprintln(stdout, "  clawhub  Read ./.clawhub/lock.json or legacy ./.clawdhub/lock.json")
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Incomplete entries preserve source clues and warnings, but are not")
-		fmt.Fprintln(stdout, "automatically restored by skit install. Reinstall with an explicit")
-		fmt.Fprintln(stdout, "source to make the Skill fully restorable.")
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Useful flags:")
-		fmt.Fprintln(stdout, "  --project       Write project lock (default)")
-		fmt.Fprintln(stdout, "  -g, --global    Write global lock")
-		fmt.Fprintln(stdout, "  --json          Print JSON")
+		fmt.Fprintln(stdout, "Create a Skill repository template named <name>-skill with")
+		fmt.Fprintln(stdout, "README.md and skills/<name>/SKILL.md.")
 	default:
 		fmt.Fprintf(stderr, "skit help: unknown command %q\n", command)
 		return 2
@@ -241,37 +205,31 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  search       Search for Skills")
-	fmt.Fprintln(w, "  install      Install sources or restore from lock")
-	fmt.Fprintln(w, "  list         List locked Skills")
-	fmt.Fprintln(w, "  remove       Remove locked and active Skills")
-	fmt.Fprintln(w, "  gc           Garbage collect unreferenced store snapshots")
-	fmt.Fprintln(w, "  update       Refresh locked Skills from their sources")
-	fmt.Fprintln(w, "  inspect      Inspect a locked Skill or source")
-	fmt.Fprintln(w, "  doctor       Check lock, store, and declared requirements")
-	fmt.Fprintln(w, "  init         Create a SKILL.md template")
-	fmt.Fprintln(w, "  import-lock  Import a compatible lock file")
+	fmt.Fprintln(w, "  install      Install Skills and activate agent links")
+	fmt.Fprintln(w, "  sources      List or edit search sources")
+	fmt.Fprintln(w, "  export       Write the local manifest to ./skit.json")
+	fmt.Fprintln(w, "  list         List installed Skills")
+	fmt.Fprintln(w, "  remove       Remove installed or active Skills")
+	fmt.Fprintln(w, "  update       Refresh installed Skills from their sources")
+	fmt.Fprintln(w, "  check        Check local Skills and active links")
+	fmt.Fprintln(w, "  init         Create a Skill repository template")
 	fmt.Fprintln(w, "  help         Show help")
 	fmt.Fprintln(w, "  version      Show version; use --check to check for updates")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Concepts:")
-	fmt.Fprintln(w, "  skit.lock records reproducible Skill entries for project or global scope.")
-	fmt.Fprintln(w, "  Active Skills are symlinks from .agents/skills or ~/.agents/skills.")
-	fmt.Fprintln(w, "  Store snapshots live under XDG_DATA_HOME/skit/store and are shared.")
-	fmt.Fprintln(w, "  Incomplete imported entries preserve source clues but are not restorable.")
+	fmt.Fprintln(w, "  Installed Skills live under XDG_DATA_HOME/skit/skills.")
+	fmt.Fprintln(w, "  XDG_DATA_HOME/skit/manifest.json records local Skills and sources.")
+	fmt.Fprintln(w, "  Active Skills are symlinks from agent skill directories.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Common flags:")
-	fmt.Fprintln(w, "  --project       Use project scope (default)")
-	fmt.Fprintln(w, "  -g, --global    Use global scope")
 	fmt.Fprintln(w, "  -a, --agent     Also activate for one or more agents")
 	fmt.Fprintln(w, "  -s, --skill     Select one or more Skills from one source")
+	fmt.Fprintln(w, "  --name          Install a single Skill under this local folder name")
 	fmt.Fprintln(w, "  --all           Install every discovered non-internal Skill")
 	fmt.Fprintln(w, "  --full-depth    Search recursively when installing a source")
-	fmt.Fprintln(w, "  --ignore-deps   Skip declared Skill dependencies")
-	fmt.Fprintln(w, "  --no-active     Write store and lock only")
 	fmt.Fprintln(w, "  --force         Replace an existing non-symlink active path")
-	fmt.Fprintln(w, "  --prune         With remove, delete unreferenced store snapshots")
-	fmt.Fprintln(w, "  --store         With list/remove, operate on shared store snapshots")
-	fmt.Fprintln(w, "  --locks         With list --store, show lock owners")
+	fmt.Fprintln(w, "  --keep          With remove, keep the local Skill directory")
+	fmt.Fprintln(w, "  --dry-run       Preview manifest installation")
 	fmt.Fprintln(w, "  --json          Print JSON for supported commands")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Run 'skit help <command>' for command-specific details.")
@@ -283,18 +241,18 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit search:", err)
 		return 2
 	}
-	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth || opts.prune || opts.store || opts.locks {
+	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.fullDepth {
 		if opts.source == "" || !opts.fullDepth {
-			fmt.Fprintln(stderr, "skit search: --global, --skill, --agent, --all, --ignore-deps, --prune, --store, and --locks are not supported")
+			fmt.Fprintln(stderr, "skit search: --global, --skill, --agent, and --all are not supported")
 			return 2
 		}
-		if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.ignoreDeps || opts.prune || opts.store || opts.locks {
-			fmt.Fprintln(stderr, "skit search: --global, --skill, --agent, --all, --ignore-deps, --prune, --store, and --locks are not supported")
+		if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all {
+			fmt.Fprintln(stderr, "skit search: --global, --skill, --agent, and --all are not supported")
 			return 2
 		}
 	}
-	if opts.noActive || opts.force {
-		fmt.Fprintln(stderr, "skit search: --no-active and --force are not supported")
+	if opts.force {
+		fmt.Fprintln(stderr, "skit search: --force is not supported")
 		return 2
 	}
 	query := strings.TrimSpace(strings.Join(rest, " "))
@@ -315,59 +273,128 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	for _, result := range results {
-		source := result.Source
-		if source == "" {
-			source = result.Slug
+		target := formatSearchTarget(result)
+		installs := formatInstalls(result.Installs)
+		line := target
+		if installs != "" {
+			line += "  " + installs
 		}
-		target := source
-		if result.Install != "" {
-			target = result.Install
-		}
-		if source != "" && result.Name != "" {
-			target = source + "@" + result.Name
-		}
-		if result.Install != "" {
-			target = result.Install
-		}
-		fmt.Fprint(stdout, target)
+		fmt.Fprintln(stdout, line)
 		if result.Description != "" {
-			fmt.Fprintf(stdout, "\t%s", result.Description)
-		}
-		if result.Path != "" {
-			fmt.Fprintf(stdout, "\t%s", result.Path)
-		}
-		if result.Installs > 0 {
-			fmt.Fprintf(stdout, "\t%s", formatInstalls(result.Installs))
+			fmt.Fprintf(stdout, "  %s\n", result.Description)
 		}
 		if result.Slug != "" {
-			fmt.Fprintf(stdout, "\thttps://skills.sh/%s", result.Slug)
+			fmt.Fprintf(stdout, "  https://skills.sh/%s\n", result.Slug)
 		}
 		fmt.Fprintln(stdout)
 	}
-	fmt.Fprintln(stdout)
-	if opts.source != "" {
-		fmt.Fprintln(stdout, "Install with: skit install <printed-install-argument>")
-	} else {
-		fmt.Fprintln(stdout, "Install with: skit install <source@skill>")
-	}
+	fmt.Fprintln(stdout, "use: skit install <source@skill>")
 	return 0
 }
 
+func formatSearchTarget(result app.SearchResult) string {
+	if result.Install != "" {
+		return result.Install
+	}
+	source := result.Source
+	if source == "" {
+		source = result.Slug
+	}
+	if source != "" && result.Name != "" {
+		return source + "@" + result.Name
+	}
+	return source
+}
+
 func formatInstalls(count int) string {
-	switch {
-	case count >= 1_000_000:
-		return fmt.Sprintf("%.1fM installs", trimFloat(float64(count)/1_000_000))
-	case count >= 1_000:
-		return fmt.Sprintf("%.1fK installs", trimFloat(float64(count)/1_000))
-	case count == 1:
+	if count <= 0 {
+		return ""
+	}
+	if count >= 1_000_000 {
+		return fmt.Sprintf("%.1fM installs", float64(count)/1_000_000)
+	}
+	if count >= 1_000 {
+		return fmt.Sprintf("%.1fK installs", float64(count)/1_000)
+	}
+	if count == 1 {
 		return "1 install"
+	}
+	return fmt.Sprintf("%d installs", count)
+}
+
+func runSources(args []string, stdout, stderr io.Writer) int {
+	opts, rest, err := parseCommon(args)
+	if err != nil {
+		fmt.Fprintln(stderr, "skit sources:", err)
+		return 2
+	}
+	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.fullDepth || opts.force || opts.keep || opts.dryRun || opts.source != "" || opts.name != "" {
+		fmt.Fprintln(stderr, "skit sources: unsupported flag")
+		return 2
+	}
+	if len(rest) == 0 {
+		sources, err := app.ListSearchSources()
+		if err != nil {
+			fmt.Fprintln(stderr, "skit sources:", err)
+			return 1
+		}
+		if opts.json {
+			return writeJSON(stdout, stderr, sources)
+		}
+		printSources(stdout, sources)
+		return 0
+	}
+	switch rest[0] {
+	case "add":
+		if len(rest) != 4 {
+			fmt.Fprintln(stderr, "skit sources add: expected <name> <type> <source>")
+			return 2
+		}
+		sources, err := app.AddSearchSource(app.SourceAddRequest{Name: rest[1], Type: rest[2], Source: rest[3]})
+		if err != nil {
+			fmt.Fprintln(stderr, "skit sources add:", err)
+			return 1
+		}
+		if opts.json {
+			return writeJSON(stdout, stderr, sources)
+		}
+		fmt.Fprintf(stdout, "added %s\n", rest[1])
+		return 0
+	case "remove", "rm":
+		if len(rest) != 2 {
+			fmt.Fprintln(stderr, "skit sources remove: expected <name>")
+			return 2
+		}
+		sources, err := app.RemoveSearchSource(rest[1])
+		if err != nil {
+			fmt.Fprintln(stderr, "skit sources remove:", err)
+			return 1
+		}
+		if opts.json {
+			return writeJSON(stdout, stderr, sources)
+		}
+		fmt.Fprintf(stdout, "removed %s\n", rest[1])
+		return 0
 	default:
-		return fmt.Sprintf("%d installs", count)
+		fmt.Fprintf(stderr, "skit sources: unknown action %q\n", rest[0])
+		return 2
 	}
 }
 
-func trimFloat(v float64) float64 {
-	return float64(int(v*10)) / 10
+func printSources(stdout io.Writer, sources []app.SearchSource) {
+	if len(sources) == 0 {
+		fmt.Fprintln(stdout, "no sources")
+		return
+	}
+	var rows [][]string
+	for _, source := range sources {
+		locator := source.Source
+		if locator == "" {
+			locator = source.URL
+		}
+		rows = append(rows, []string{source.Name, source.Type, locator})
+	}
+	writeTable(stdout, rows)
 }
 
 func runInstallSource(args []string, stdout, stderr io.Writer) int {
@@ -377,32 +404,53 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if len(rest) == 0 {
-		return runRestore(opts, stdout, stderr)
-	}
-	if opts.store {
-		fmt.Fprintln(stderr, "skit install: --store is not supported")
-		return 2
-	}
-	if opts.locks {
-		fmt.Fprintln(stderr, "skit install: --locks is not supported")
-		return 2
+		defaultManifest := "skit.json"
+		if _, err := os.Stat(defaultManifest); err != nil {
+			fmt.Fprintln(stderr, "skit install: expected a source or ./skit.json")
+			return 2
+		}
+		rest = []string{defaultManifest}
 	}
 	if len(rest) > 1 && len(opts.skills) > 0 {
 		fmt.Fprintln(stderr, "skit install: --skill can only be used with one source; use source@skill for multiple sources")
 		return 2
 	}
+	if len(rest) > 1 && opts.name != "" {
+		fmt.Fprintln(stderr, "skit install: --name can only be used with one source")
+		return 2
+	}
+	if len(rest) == 1 && opts.name == "" && len(opts.skills) == 0 && isManifestFile(rest[0]) {
+		result, err := app.ApplyManifest(app.ApplyManifestRequest{Context: context.Background(), Path: rest[0], Agents: opts.agents, DryRun: opts.dryRun})
+		if err != nil {
+			fmt.Fprintln(stderr, "skit install:", err)
+			return 1
+		}
+		if opts.json {
+			return writeJSON(stdout, stderr, result)
+		}
+		if opts.dryRun {
+			printDryRunResult(stdout, stderr, result)
+		} else {
+			printAddResult(stdout, stderr, result)
+		}
+		return 0
+	}
+	if opts.dryRun {
+		fmt.Fprintln(stderr, "skit install: --dry-run is only supported for manifest installs")
+		return 2
+	}
 	for _, src := range rest {
 		result, err := app.Add(app.AddRequest{
-			CWD:        cwd(),
-			Scope:      opts.scope,
-			Source:     src,
-			Skills:     opts.skills,
-			Agents:     opts.agents,
-			All:        opts.all,
-			IgnoreDeps: opts.ignoreDeps,
-			FullDepth:  opts.fullDepth,
-			NoActive:   opts.noActive,
-			Force:      opts.force,
+			CWD:       cwd(),
+			Scope:     opts.scope,
+			Source:    src,
+			Name:      opts.name,
+			Skills:    opts.skills,
+			Agents:    opts.agents,
+			All:       opts.all,
+			FullDepth: opts.fullDepth,
+			Force:     opts.force,
+			Progress:  installProgress(stderr, opts.json),
 		})
 		if err != nil {
 			fmt.Fprintln(stderr, "skit install:", err)
@@ -414,12 +462,63 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func printAddResult(stdout, stderr io.Writer, result app.AddResult) {
-	for _, entry := range result.DependencyEntries {
-		fmt.Fprintf(stdout, "added dependency %s %s\n", entry.Name, entry.Hashes.Tree)
+func installProgress(stderr io.Writer, quiet bool) func(string) {
+	if quiet {
+		return nil
 	}
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("SKIT_PROGRESS")))
+	if mode == "off" || mode == "0" || mode == "false" {
+		return nil
+	}
+	if mode == "ansi" || shouldUseANSI(stderr) {
+		frames := []string{"-", "\\", "|", "/"}
+		i := 0
+		return func(message string) {
+			if message == "" {
+				return
+			}
+			fmt.Fprintf(stderr, "\r\033[2K[%s] %s\n", frames[i%len(frames)], message)
+			i++
+		}
+	}
+	return func(message string) {
+		if message != "" {
+			fmt.Fprintln(stderr, message)
+		}
+	}
+}
+
+func shouldUseANSI(w io.Writer) bool {
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	if os.Getenv("FORCE_COLOR") != "" {
+		return true
+	}
+	file, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func printDryRunResult(stdout, stderr io.Writer, result app.AddResult) {
 	for _, entry := range result.Entries {
-		fmt.Fprintf(stdout, "added %s %s\n", entry.Name, entry.Hashes.Tree)
+		fmt.Fprintf(stdout, "would install %s\n", entry.Name)
+	}
+	for _, warning := range compactWarnings(result.Warnings) {
+		fmt.Fprintf(stderr, "warning: %s\n", warning)
+	}
+}
+
+func isManifestFile(path string) bool {
+	return strings.HasSuffix(path, ".json")
+}
+
+func printAddResult(stdout, stderr io.Writer, result app.AddResult) {
+	for _, entry := range result.Entries {
+		fmt.Fprintf(stdout, "installed %s\n", entry.Name)
 	}
 	for _, warning := range compactWarnings(result.Warnings) {
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
@@ -427,6 +526,36 @@ func printAddResult(stdout, stderr io.Writer, result app.AddResult) {
 	for _, path := range result.ActivePaths {
 		fmt.Fprintf(stdout, "active %s\n", path)
 	}
+}
+
+func runExport(args []string, stdout, stderr io.Writer) int {
+	opts, rest, err := parseCommon(args)
+	if err != nil {
+		fmt.Fprintln(stderr, "skit export:", err)
+		return 2
+	}
+	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.fullDepth || opts.force || opts.keep || opts.dryRun || opts.source != "" || opts.name != "" {
+		fmt.Fprintln(stderr, "skit export: unsupported flag")
+		return 2
+	}
+	if len(rest) > 1 {
+		fmt.Fprintln(stderr, "skit export: expected zero or one path")
+		return 2
+	}
+	path := ""
+	if len(rest) == 1 {
+		path = rest[0]
+	}
+	result, err := app.ExportManifest(app.ExportManifestRequest{CWD: cwd(), Path: path})
+	if err != nil {
+		fmt.Fprintln(stderr, "skit export:", err)
+		return 1
+	}
+	if opts.json {
+		return writeJSON(stdout, stderr, result)
+	}
+	fmt.Fprintf(stdout, "exported %s\n", result.Path)
+	return 0
 }
 
 func compactWarnings(warnings []string) []string {
@@ -479,67 +608,17 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	return runInstallSource(args, stdout, stderr)
 }
 
-func runRestore(opts commonOptions, stdout, stderr io.Writer) int {
-	if opts.all || len(opts.skills) > 0 || opts.ignoreDeps || opts.fullDepth || opts.noActive || opts.force || opts.prune || opts.store || opts.locks {
-		fmt.Fprintln(stderr, "skit install: flags require at least one source")
-		return 2
-	}
-	result, err := app.Install(app.InstallRequest{CWD: cwd(), Scope: opts.scope, Agents: opts.agents})
-	if err != nil {
-		fmt.Fprintln(stderr, "skit install:", err)
-		return 1
-	}
-	for _, entry := range result.Restored {
-		fmt.Fprintf(stdout, "restored %s %s\n", entry.Name, entry.Hashes.Tree)
-	}
-	for _, path := range result.ActivePaths {
-		fmt.Fprintf(stdout, "active %s\n", path)
-	}
-	for _, entry := range result.Skipped {
-		fmt.Fprintf(stderr, "skipped incomplete entry %s\n", entry.Name)
-	}
-	return 0
-}
-
 func runList(args []string, stdout, stderr io.Writer) int {
 	opts, rest, err := parseCommon(args)
 	if err != nil {
 		fmt.Fprintln(stderr, "skit list:", err)
 		return 2
 	}
-	if len(rest) != 0 && !opts.store {
+	if len(rest) != 0 {
 		fmt.Fprintln(stderr, "skit list: unexpected arguments")
 		return 2
 	}
-	if opts.prune {
-		fmt.Fprintln(stderr, "skit list: --prune is not supported")
-		return 2
-	}
-	if opts.locks && !opts.store {
-		fmt.Fprintln(stderr, "skit list: --locks requires --store")
-		return 2
-	}
-	if opts.store {
-		if len(opts.agents) > 0 {
-			fmt.Fprintln(stderr, "skit list: --agent is not supported with --store")
-			return 2
-		}
-		if opts.scope == app.Global {
-			fmt.Fprintln(stderr, "skit list: --global is not supported with --store")
-			return 2
-		}
-		entries, err := app.ListStore(app.ListStoreRequest{CWD: cwd(), Names: rest, IncludeLocks: opts.locks})
-		if err != nil {
-			fmt.Fprintln(stderr, "skit list:", err)
-			return 1
-		}
-		if opts.json {
-			return writeJSON(stdout, stderr, entries)
-		}
-		printStoreList(stdout, entries, opts.locks)
-		return 0
-	}
-	entries, err := app.List(app.ListRequest{CWD: cwd(), Scope: opts.scope, Agents: opts.agents})
+	entries, err := app.List(app.ListRequest{CWD: cwd(), Scope: opts.scope, Agents: opts.agents, All: opts.all})
 	if err != nil {
 		fmt.Fprintln(stderr, "skit list:", err)
 		return 1
@@ -547,42 +626,82 @@ func runList(args []string, stdout, stderr io.Writer) int {
 	if opts.json {
 		return writeJSON(stdout, stderr, entries)
 	}
-	for _, entry := range entries {
-		ref := entry.Source.ResolvedRef
-		if ref == "" {
-			ref = entry.Source.Ref
+	if len(entries) == 0 {
+		if opts.all {
+			fmt.Fprintln(stdout, "No skills found.")
+		} else {
+			fmt.Fprintln(stdout, "No skills installed.")
 		}
-		if ref == "" {
-			ref = entry.Hashes.Tree
-		}
-		fmt.Fprintf(stdout, "%s\t%s\t%s\n", entry.Name, entry.Source.Locator, ref)
+		return 0
 	}
+	if opts.all {
+		printListAll(stdout, entries)
+		return 0
+	}
+	var rows [][]string
+	for _, entry := range entries {
+		rows = append(rows, []string{entry.Name, listState(entry), entry.Description})
+	}
+	writeTable(stdout, rows)
 	return 0
 }
 
-func printStoreList(stdout io.Writer, entries []app.StoreListEntry, showLocks bool) {
-	nameWidth := len("NAME")
-	treeWidth := len("TREE")
-	useWidth := len("USE")
-	locksWidth := len("LOCKS")
+func printListAll(stdout io.Writer, entries []app.ListEntry) {
+	printedManaged := false
+	var managedRows [][]string
 	for _, entry := range entries {
-		nameWidth = maxInt(nameWidth, len(entry.Name))
-		treeWidth = maxInt(treeWidth, len(entry.Tree))
-		useWidth = maxInt(useWidth, len(strings.Join(entry.Use, ",")))
-		locksWidth = maxInt(locksWidth, len(strings.Join(entry.Locks, ",")))
-	}
-	if showLocks {
-		fmt.Fprintf(stdout, "%-*s  %-*s  %-*s  %-*s\n", nameWidth, "NAME", treeWidth, "TREE", useWidth, "USE", locksWidth, "LOCKS")
-	} else {
-		fmt.Fprintf(stdout, "%-*s  %-*s  %-*s\n", nameWidth, "NAME", treeWidth, "TREE", useWidth, "USE")
-	}
-	for _, entry := range entries {
-		if showLocks {
-			fmt.Fprintf(stdout, "%-*s  %-*s  %-*s  %-*s\n", nameWidth, entry.Name, treeWidth, entry.Tree, useWidth, strings.Join(entry.Use, ","), locksWidth, strings.Join(entry.Locks, ","))
-		} else {
-			fmt.Fprintf(stdout, "%-*s  %-*s  %-*s\n", nameWidth, entry.Name, treeWidth, entry.Tree, useWidth, strings.Join(entry.Use, ","))
+		if !entry.Managed {
+			continue
 		}
+		managedRows = append(managedRows, []string{entry.Name, listState(entry), entry.Description})
 	}
+	if len(managedRows) > 0 {
+		fmt.Fprintln(stdout, "managed")
+		writeTable(stdout, managedRows)
+		printedManaged = true
+	}
+	var externalRows [][]string
+	for _, entry := range entries {
+		if entry.Managed {
+			continue
+		}
+		externalRows = append(externalRows, []string{entry.Name, entry.Path, entry.Description})
+	}
+	if len(externalRows) > 0 {
+		if printedManaged {
+			fmt.Fprintln(stdout)
+		}
+		fmt.Fprintln(stdout, "external")
+		writeTable(stdout, externalRows)
+	}
+}
+
+func listState(entry app.ListEntry) string {
+	if entry.Missing {
+		return "missing"
+	}
+	if len(entry.Active) == 0 {
+		return "inactive"
+	}
+	return "active"
+}
+
+func writeTable(stdout io.Writer, rows [][]string) {
+	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	for _, row := range rows {
+		last := len(row)
+		for last > 0 && row[last-1] == "" {
+			last--
+		}
+		for i := 0; i < last; i++ {
+			if i > 0 {
+				fmt.Fprint(tw, "\t")
+			}
+			fmt.Fprint(tw, row[i])
+		}
+		fmt.Fprintln(tw)
+	}
+	_ = tw.Flush()
 }
 
 func maxInt(a, b int) int {
@@ -598,35 +717,14 @@ func runRemove(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit remove:", err)
 		return 2
 	}
-	if opts.store {
-		return runRemoveStore(opts, rest, stdout, stderr)
-	}
-	if opts.all && len(rest) > 0 {
-		fmt.Fprintln(stderr, "skit remove: --all cannot be combined with skill names")
-		return 2
-	}
-	if !opts.all && len(rest) == 0 {
-		fmt.Fprintln(stderr, "skit remove: expected at least one skill name or --all")
-		return 2
-	}
-	if opts.locks {
-		fmt.Fprintln(stderr, "skit remove: --locks is not supported")
+	if len(rest) == 0 {
+		fmt.Fprintln(stderr, "skit remove: expected at least one skill name")
 		return 2
 	}
 	names := rest
-	if opts.all {
-		entries, err := app.List(app.ListRequest{CWD: cwd(), Scope: opts.scope, Agents: opts.agents})
-		if err != nil {
-			fmt.Fprintln(stderr, "skit remove:", err)
-			return 1
-		}
-		for _, entry := range entries {
-			names = append(names, entry.Name)
-		}
-	}
 	exit := 0
 	for _, name := range names {
-		result, err := app.Remove(app.RemoveRequest{CWD: cwd(), Scope: opts.scope, Name: name, Prune: opts.prune, Agents: opts.agents})
+		result, err := app.Remove(app.RemoveRequest{CWD: cwd(), Scope: opts.scope, Name: name, Agents: opts.agents, Keep: opts.keep})
 		if err != nil {
 			fmt.Fprintln(stderr, "skit remove:", err)
 			return 1
@@ -637,73 +735,17 @@ func runRemove(args []string, stdout, stderr io.Writer) int {
 			continue
 		}
 		fmt.Fprintf(stdout, "removed %s\n", name)
-		for _, path := range result.Pruned {
-			fmt.Fprintf(stdout, "pruned %s\n", path)
+		for _, path := range result.Unlinked {
+			fmt.Fprintf(stdout, "unlinked %s\n", path)
+		}
+		for _, path := range result.Deleted {
+			fmt.Fprintf(stdout, "deleted %s\n", path)
 		}
 		for _, path := range result.Skipped {
-			fmt.Fprintf(stderr, "kept referenced store %s\n", path)
+			fmt.Fprintf(stderr, "skipped %s\n", path)
 		}
 	}
 	return exit
-}
-
-func runRemoveStore(opts commonOptions, rest []string, stdout, stderr io.Writer) int {
-	if opts.scope == app.Global || opts.all || opts.prune || opts.force || opts.noActive || opts.ignoreDeps || opts.fullDepth || opts.locks || len(opts.skills) > 0 || len(opts.agents) > 0 {
-		fmt.Fprintln(stderr, "skit remove: with --store, --global, --all, --prune, --force, --no-active, --ignore-deps, --full-depth, --locks, --agent, and --skill are not supported")
-		return 2
-	}
-	if len(rest) == 0 || len(rest) > 2 {
-		fmt.Fprintln(stderr, "skit remove: --store expected skill name and optional tree prefix")
-		return 2
-	}
-	result, err := app.RemoveStore(app.RemoveStoreRequest{CWD: cwd(), Name: rest[0], TreePrefix: optionalArg(rest, 1)})
-	if err != nil {
-		fmt.Fprintln(stderr, "skit remove:", err)
-		return 1
-	}
-	if opts.json {
-		return writeJSON(stdout, stderr, result)
-	}
-	fmt.Fprintf(stdout, "removed store %s %s\n", result.Name, result.Tree)
-	return 0
-}
-
-func optionalArg(args []string, index int) string {
-	if index >= len(args) {
-		return ""
-	}
-	return args[index]
-}
-
-func runGC(args []string, stdout, stderr io.Writer) int {
-	opts, rest, err := parseCommon(args)
-	if err != nil {
-		fmt.Fprintln(stderr, "skit gc:", err)
-		return 2
-	}
-	if len(rest) != 0 {
-		fmt.Fprintln(stderr, "skit gc: unexpected arguments")
-		return 2
-	}
-	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.ignoreDeps || opts.fullDepth || opts.noActive || opts.force || opts.prune || opts.store || opts.locks {
-		fmt.Fprintln(stderr, "skit gc: --global, --skill, --agent, --all, --ignore-deps, --full-depth, --no-active, --force, --prune, --store, and --locks are not supported")
-		return 2
-	}
-	result, err := app.GC(app.GCRequest{CWD: cwd()})
-	if err != nil {
-		fmt.Fprintln(stderr, "skit gc:", err)
-		return 1
-	}
-	if opts.json {
-		return writeJSON(stdout, stderr, result)
-	}
-	for _, path := range result.Pruned {
-		fmt.Fprintf(stdout, "pruned %s\n", path)
-	}
-	if len(result.Pruned) == 0 {
-		fmt.Fprintln(stdout, "nothing to prune")
-	}
-	return 0
 }
 
 func runUpdate(args []string, stdout, stderr io.Writer) int {
@@ -716,23 +758,11 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit update: expected zero or one skill name")
 		return 2
 	}
-	if opts.prune {
-		fmt.Fprintln(stderr, "skit update: --prune is not supported")
-		return 2
-	}
-	if opts.store {
-		fmt.Fprintln(stderr, "skit update: --store is not supported")
-		return 2
-	}
-	if opts.locks {
-		fmt.Fprintln(stderr, "skit update: --locks is not supported")
-		return 2
-	}
 	name := ""
 	if len(rest) == 1 {
 		name = rest[0]
 	}
-	result, err := app.Update(app.UpdateRequest{CWD: cwd(), Scope: opts.scope, Name: name, Agents: opts.agents, IgnoreDeps: opts.ignoreDeps})
+	result, err := app.Update(app.UpdateRequest{CWD: cwd(), Scope: opts.scope, Name: name, Agents: opts.agents})
 	if err != nil {
 		fmt.Fprintln(stderr, "skit update:", err)
 		return 1
@@ -740,11 +770,8 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	if opts.json {
 		return writeJSON(stdout, stderr, result)
 	}
-	for _, entry := range result.DependencyEntries {
-		fmt.Fprintf(stdout, "updated dependency %s %s\n", entry.Name, entry.Hashes.Tree)
-	}
 	for _, entry := range result.Entries {
-		fmt.Fprintf(stdout, "updated %s %s\n", entry.Name, entry.Hashes.Tree)
+		fmt.Fprintf(stdout, "updated %s\n", entry.Name)
 	}
 	for _, warning := range compactWarnings(result.Warnings) {
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
@@ -753,108 +780,19 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runInspect(args []string, stdout, stderr io.Writer) int {
+func runCheck(args []string, stdout, stderr io.Writer) int {
 	opts, rest, err := parseCommon(args)
 	if err != nil {
-		fmt.Fprintln(stderr, "skit inspect:", err)
-		return 2
-	}
-	if len(rest) != 1 {
-		fmt.Fprintln(stderr, "skit inspect: expected exactly one skill name or source")
-		return 2
-	}
-	if opts.prune {
-		fmt.Fprintln(stderr, "skit inspect: --prune is not supported")
-		return 2
-	}
-	if opts.store {
-		fmt.Fprintln(stderr, "skit inspect: --store is not supported")
-		return 2
-	}
-	if opts.locks {
-		fmt.Fprintln(stderr, "skit inspect: --locks is not supported")
-		return 2
-	}
-	if len(opts.agents) > 0 {
-		fmt.Fprintln(stderr, "skit inspect: --agent is not supported")
-		return 2
-	}
-	if len(opts.skills) > 1 {
-		fmt.Fprintln(stderr, "skit inspect: expected at most one --skill value")
-		return 2
-	}
-	skillName := ""
-	if len(opts.skills) == 1 {
-		skillName = opts.skills[0]
-	}
-	result, err := app.Inspect(app.InspectRequest{CWD: cwd(), Scope: opts.scope, Target: rest[0], Skill: skillName})
-	if err != nil {
-		fmt.Fprintln(stderr, "skit inspect:", err)
-		return 1
-	}
-	if opts.json {
-		return writeJSON(stdout, stderr, result)
-	}
-	fmt.Fprintf(stdout, "name: %s\n", result.Name)
-	fmt.Fprintf(stdout, "description: %s\n", result.Description)
-	fmt.Fprintf(stdout, "source: %s %s\n", result.Source.Type, result.Source.Locator)
-	if result.Source.Ref != "" {
-		fmt.Fprintf(stdout, "ref: %s\n", result.Source.Ref)
-	}
-	if result.Source.ResolvedRef != "" {
-		fmt.Fprintf(stdout, "resolvedRef: %s\n", result.Source.ResolvedRef)
-	}
-	if result.Source.Subpath != "" {
-		fmt.Fprintf(stdout, "subpath: %s\n", result.Source.Subpath)
-	}
-	if result.Hashes.Tree != "" {
-		fmt.Fprintf(stdout, "tree: %s\n", result.Hashes.Tree)
-	}
-	if result.Hashes.SkillMD != "" {
-		fmt.Fprintf(stdout, "skillMd: %s\n", result.Hashes.SkillMD)
-	}
-	if result.StorePath != "" {
-		fmt.Fprintf(stdout, "store: %s\n", result.StorePath)
-	}
-	printList(stdout, "bins", result.Requires.Bins)
-	printList(stdout, "anyBins", result.Requires.AnyBins)
-	printList(stdout, "env", result.Requires.Env)
-	printList(stdout, "config", result.Requires.Config)
-	printDependencies(stdout, result.Dependencies)
-	printList(stdout, "files", result.Files)
-	printList(stdout, "warnings", result.Warnings)
-	return 0
-}
-
-func runDoctor(args []string, stdout, stderr io.Writer) int {
-	opts, rest, err := parseCommon(args)
-	if err != nil {
-		fmt.Fprintln(stderr, "skit doctor:", err)
+		fmt.Fprintln(stderr, "skit check:", err)
 		return 2
 	}
 	if len(rest) != 0 {
-		fmt.Fprintln(stderr, "skit doctor: unexpected arguments")
-		return 2
-	}
-	if opts.prune {
-		fmt.Fprintln(stderr, "skit doctor: --prune is not supported")
-		return 2
-	}
-	if opts.store {
-		fmt.Fprintln(stderr, "skit doctor: --store is not supported")
-		return 2
-	}
-	if opts.locks {
-		fmt.Fprintln(stderr, "skit doctor: --locks is not supported")
-		return 2
-	}
-	if len(opts.agents) > 0 {
-		fmt.Fprintln(stderr, "skit doctor: --agent is not supported")
+		fmt.Fprintln(stderr, "skit check: unexpected arguments")
 		return 2
 	}
 	result, err := app.Doctor(app.DoctorRequest{CWD: cwd(), Scope: opts.scope})
 	if err != nil {
-		fmt.Fprintln(stderr, "skit doctor:", err)
+		fmt.Fprintln(stderr, "skit check:", err)
 		return 1
 	}
 	if opts.json {
@@ -890,8 +828,8 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit init:", err)
 		return 2
 	}
-	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.prune || opts.store || opts.locks {
-		fmt.Fprintln(stderr, "skit init: --global, --skill, --agent, --all, --prune, --store, and --locks are not supported")
+	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all {
+		fmt.Fprintln(stderr, "skit init: --global, --skill, --agent, and --all are not supported")
 		return 2
 	}
 	if len(rest) > 1 {
@@ -910,50 +848,9 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	if opts.json {
 		return writeJSON(stdout, stderr, result)
 	}
-	fmt.Fprintf(stdout, "created %s\n", result.Path)
-	return 0
-}
-
-func runImportLock(args []string, stdout, stderr io.Writer) int {
-	opts, rest, err := parseCommon(args)
-	if err != nil {
-		fmt.Fprintln(stderr, "skit import-lock:", err)
-		return 2
-	}
-	if len(rest) != 1 {
-		fmt.Fprintln(stderr, "skit import-lock: expected lock kind")
-		return 2
-	}
-	if opts.prune {
-		fmt.Fprintln(stderr, "skit import-lock: --prune is not supported")
-		return 2
-	}
-	if opts.store {
-		fmt.Fprintln(stderr, "skit import-lock: --store is not supported")
-		return 2
-	}
-	if opts.locks {
-		fmt.Fprintln(stderr, "skit import-lock: --locks is not supported")
-		return 2
-	}
-	if len(opts.agents) > 0 {
-		fmt.Fprintln(stderr, "skit import-lock: --agent is not supported")
-		return 2
-	}
-	result, err := app.ImportLock(app.ImportLockRequest{CWD: cwd(), Scope: opts.scope, Kind: rest[0]})
-	if err != nil {
-		fmt.Fprintln(stderr, "skit import-lock:", err)
-		return 1
-	}
-	if opts.json {
-		return writeJSON(stdout, stderr, result)
-	}
-	for _, entry := range result.Entries {
-		fmt.Fprintf(stdout, "imported %s incomplete\n", entry.Name)
-	}
-	for _, warning := range result.Warnings {
-		fmt.Fprintf(stderr, "warning: %s\n", warning)
-	}
+	fmt.Fprintf(stdout, "created %s\n", result.RepoName)
+	fmt.Fprintf(stdout, "readme %s\n", result.README)
+	fmt.Fprintf(stdout, "skill %s\n", result.Path)
 	return 0
 }
 
@@ -1000,44 +897,18 @@ func writeJSON(stdout, stderr io.Writer, v any) int {
 	return 0
 }
 
-func printList(w io.Writer, label string, items []string) {
-	if len(items) == 0 {
-		return
-	}
-	fmt.Fprintf(w, "%s:\n", label)
-	for _, item := range items {
-		fmt.Fprintf(w, "  %s\n", item)
-	}
-}
-
-func printDependencies(w io.Writer, deps []lockfile.Dependency) {
-	if len(deps) == 0 {
-		return
-	}
-	fmt.Fprintln(w, "dependencies:")
-	for _, dep := range deps {
-		optional := ""
-		if dep.Optional {
-			optional = " optional"
-		}
-		fmt.Fprintf(w, "  %s\t%s\t%s%s\n", dep.Name, dep.Source.Type, dep.Source.Locator, optional)
-	}
-}
-
 type commonOptions struct {
-	scope      app.Scope
-	skills     []string
-	agents     []string
-	source     string
-	all        bool
-	json       bool
-	ignoreDeps bool
-	fullDepth  bool
-	noActive   bool
-	force      bool
-	prune      bool
-	store      bool
-	locks      bool
+	scope     app.Scope
+	skills    []string
+	agents    []string
+	source    string
+	name      string
+	all       bool
+	json      bool
+	fullDepth bool
+	force     bool
+	keep      bool
+	dryRun    bool
 }
 
 func parseCommon(args []string) (commonOptions, []string, error) {
@@ -1106,23 +977,26 @@ func parseCommon(args []string) (commonOptions, []string, error) {
 				return opts, nil, fmt.Errorf("--source may only be provided once")
 			}
 			opts.source = args[i]
+		case "--name":
+			i++
+			if i >= len(args) {
+				return opts, nil, fmt.Errorf("%s requires a value", arg)
+			}
+			if opts.name != "" {
+				return opts, nil, fmt.Errorf("--name may only be provided once")
+			}
+			opts.name = args[i]
 		case "-y", "--yes":
 		case "--json":
 			opts.json = true
-		case "--ignore-deps":
-			opts.ignoreDeps = true
 		case "--full-depth":
 			opts.fullDepth = true
-		case "--no-active":
-			opts.noActive = true
 		case "--force":
 			opts.force = true
-		case "--prune":
-			opts.prune = true
-		case "--store":
-			opts.store = true
-		case "--locks":
-			opts.locks = true
+		case "--keep":
+			opts.keep = true
+		case "--dry-run":
+			opts.dryRun = true
 		default:
 			if len(arg) > 0 && arg[0] == '-' {
 				return opts, nil, fmt.Errorf("unknown flag %s", arg)

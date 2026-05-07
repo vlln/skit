@@ -25,6 +25,7 @@ type Requires struct {
 	AnyBins []string
 	Env     []string
 	Config  []string
+	Skills  []string
 }
 
 type Platforms struct {
@@ -109,6 +110,7 @@ func decodeSkit(in Skit) (Skit, error) {
 			AnyBins: stringList(requires["anyBins"]),
 			Env:     stringList(requires["env"]),
 			Config:  stringList(requires["config"]),
+			Skills:  stringList(requires["skills"]),
 		}
 	}
 	if platforms, ok := AsMap(raw["platforms"]); ok {
@@ -192,6 +194,7 @@ func requiresFromMap(block YAMLMap) Requires {
 		AnyBins: stringList(requires["anyBins"]),
 		Env:     stringList(requires["env"]),
 		Config:  stringList(requires["config"]),
+		Skills:  stringList(requires["skills"]),
 	}
 }
 
@@ -207,6 +210,9 @@ func mergeCompatibility(explicit, compat Skit) Skit {
 	}
 	if len(explicit.Requires.Config) == 0 {
 		explicit.Requires.Config = compat.Requires.Config
+	}
+	if len(explicit.Requires.Skills) == 0 {
+		explicit.Requires.Skills = compat.Requires.Skills
 	}
 	if len(explicit.Platforms.OS) == 0 {
 		explicit.Platforms.OS = compat.Platforms.OS
