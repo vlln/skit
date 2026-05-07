@@ -14,7 +14,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-111827?style=flat-square"></a>
-  <img alt="Go 1.23+" src="https://img.shields.io/badge/Go-1.23%2B-00ADD8?style=flat-square">
+  <img alt="Go 1.24+" src="https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat-square">
   <img alt="CLI: skit" src="https://img.shields.io/badge/CLI-skit-2F80ED?style=flat-square">
   <img alt="Model: manifest" src="https://img.shields.io/badge/model-manifest-27AE60?style=flat-square">
   <img alt="No skill execution during install" src="https://img.shields.io/badge/install-no%20skill%20execution-F2C94C?style=flat-square">
