@@ -480,3 +480,58 @@ func TestCheckReportsMissingInstallDir(t *testing.T) {
 		t.Fatalf("expected missing-install-dir check, got %#v", result.Checks)
 	}
 }
+
+func TestConvertGitHubBlobURL(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{
+			"https://github.com/vlln/bio-skills/blob/main/skit.json",
+			"https://raw.githubusercontent.com/vlln/bio-skills/main/skit.json",
+		},
+		{
+			"https://github.com/vlln/mip/blob/main/skills/image-mirror/README.md",
+			"https://raw.githubusercontent.com/vlln/mip/main/skills/image-mirror/README.md",
+		},
+		{
+			"https://github.com/vlln/mip",
+			"https://github.com/vlln/mip",
+		},
+		{
+			"https://example.com/file.json",
+			"https://example.com/file.json",
+		},
+	}
+	for _, test := range tests {
+		got := convertGitHubBlobURL(test.in)
+		if got != test.want {
+			t.Errorf("convertGitHubBlobURL(%s) = %s, want %s", test.in, got, test.want)
+		}
+	}
+}
+
+func TestSearchJSONCatalogSource(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	catalogPath := filepath.Join(t.TempDir(), "catalog.json")
+	raw := `{
+  "schema": "skit.catalog/v1",
+  "skills": [
+    {"name": "image-review", "target": "gh:org/repo@image-review", "description": "Review images.", "keywords": ["vision"]},
+    {"name": "code-lint", "target": "gh:org/repo@code-lint", "description": "Lint source code.", "keywords": ["linting"]}
+  ]
+}`
+	if err := os.WriteFile(catalogPath, []byte(raw), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddSearchSource(SourceAddRequest{Name: "test-catalog", Type: "json", Source: catalogPath}); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Search(SearchRequest{Query: "review", Source: "test-catalog"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Name != "image-review" {
+		t.Fatalf("search json results = %#v", results)
+	}
+}
