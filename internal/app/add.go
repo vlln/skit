@@ -187,6 +187,82 @@ func manifestActiveDirs(agents []string) ([]string, error) {
 	return dirs, nil
 }
 
+type AddFromNamedSourceRequest struct {
+	CWD        string
+	Scope      Scope
+	SourceName string
+	SkillName  string
+	Name       string
+	Agents     []string
+	Force      bool
+	Progress   func(string)
+}
+
+func AddFromNamedSource(req AddFromNamedSourceRequest) (AddResult, error) {
+	var result AddResult
+	sources, err := ListSearchSources()
+	if err != nil {
+		return result, err
+	}
+	var found *SearchSource
+	for i := range sources {
+		if sources[i].Name == req.SourceName {
+			found = &sources[i]
+			break
+		}
+	}
+	if found == nil {
+		return result, fmt.Errorf("source %q not found", req.SourceName)
+	}
+	if !found.Enabled {
+		return result, fmt.Errorf("source %q is disabled", req.SourceName)
+	}
+
+	installSrc, err := resolveSkillSource(*found, req.SkillName)
+	if err != nil {
+		return result, err
+	}
+
+	return Add(AddRequest{
+		Context:  context.Background(),
+		CWD:      req.CWD,
+		Scope:    req.Scope,
+		Source:   installSrc,
+		Name:     req.Name,
+		Agents:   req.Agents,
+		Force:    req.Force,
+		Progress: req.Progress,
+	})
+}
+
+func resolveSkillSource(src SearchSource, skillName string) (string, error) {
+	switch src.Type {
+	case "json":
+		raw, err := readJSONSource(context.Background(), src)
+		if err != nil {
+			return "", fmt.Errorf("read catalog: %w", err)
+		}
+		items, err := parseCatalogItems(raw)
+		if err != nil {
+			return "", fmt.Errorf("parse catalog: %w", err)
+		}
+		for _, item := range items {
+			if item.Name == skillName {
+				return firstNonEmpty(item.Install, item.Target, item.Source), nil
+			}
+		}
+		return "", fmt.Errorf("skill %q not found in source %q", skillName, src.Name)
+	case "repo":
+		locator := firstNonEmpty(src.Source, src.URL)
+		if locator == "" {
+			return "", fmt.Errorf("empty locator for source %q", src.Name)
+		}
+		return locator + "@" + skillName, nil
+	default:
+		return "", fmt.Errorf("source type %q does not support named install", src.Type)
+	}
+}
+
 func selectSkills(skills []skill.Skill, wanted []string, all bool) ([]skill.Skill, error) {
 	if all {
 		if len(skills) == 0 {

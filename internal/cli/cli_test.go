@@ -320,3 +320,122 @@ func writeCLITestSkill(t *testing.T, path, name string) {
 		t.Fatal(err)
 	}
 }
+
+
+func TestSourceCommandCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	// Test "source" alias works
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"source"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("source code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "skills-sh") {
+		t.Fatalf("source list should show default sources: %q", stdout.String())
+	}
+
+	// Test source add with auto-detect (json type)
+	src := t.TempDir()
+	catalogPath := filepath.Join(src, "catalog.json")
+	catalogJSON := `{
+  "schema": "skit.catalog/v1",
+  "skills": [
+    {"name": "my-skill", "install": "` + src + `", "description": "A test skill."}
+  ]
+}`
+	if err := os.WriteFile(catalogPath, []byte(catalogJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"source", "add", catalogPath}, &stdout, &stderr); code != 0 {
+		t.Fatalf("source add code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "added") {
+		t.Fatalf("source add should show added: %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "json") {
+		t.Fatalf("source add should detect json type: %q", stdout.String())
+	}
+
+	// Test source enable/disable
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"source", "disable", "catalog"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("source disable code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "disabled") {
+		t.Fatalf("source disable should show disabled: %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"source", "enable", "catalog"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("source enable code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "enabled") {
+		t.Fatalf("source enable should show enabled: %q", stdout.String())
+	}
+
+	// Test old sources command still works
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"sources"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("sources code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestSourceAddOldFormatCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"source", "add", "my-reg", "registry", "https://my.example.com"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("source add old format code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "added my-reg") {
+		t.Fatalf("source add old format stdout = %q", stdout.String())
+	}
+}
+
+func TestInstallNamespaceSourceCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	// Create a skill directory and a catalog pointing to it
+	skillDir := filepath.Join(t.TempDir(), "my-skill")
+	writeCLITestSkill(t, filepath.Join(skillDir, "SKILL.md"), "my-skill")
+
+	// Create a catalog that references the skill directory
+	catalogPath := filepath.Join(t.TempDir(), "catalog.json")
+	catalogJSON := `{
+  "schema": "skit.catalog/v1",
+  "skills": [
+    {"name": "my-skill", "install": "` + skillDir + `", "description": "test skill"}
+  ]
+}`
+	if err := os.WriteFile(catalogPath, []byte(catalogJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add the catalog as a source
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"source", "add", "testns", catalogPath}, &stdout, &stderr); code != 0 {
+		t.Fatalf("source add code = %d stderr=%q", code, stderr.String())
+	}
+
+	// Install via namespace syntax
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"install", "testns/my-skill"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install namespace code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "installed my-skill") {
+		t.Fatalf("install namespace stdout = %q", stdout.String())
+	}
+}

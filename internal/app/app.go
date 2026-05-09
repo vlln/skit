@@ -314,6 +314,7 @@ func readJSONSource(ctx context.Context, src SearchSource) ([]byte, error) {
 		return nil, fmt.Errorf("json source is required")
 	}
 	if strings.HasPrefix(locator, "http://") || strings.HasPrefix(locator, "https://") {
+		locator = convertGitHubBlobURL(locator)
 		httpClient := &http.Client{Timeout: 10 * time.Second}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, locator, nil)
 		if err != nil {

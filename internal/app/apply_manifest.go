@@ -68,22 +68,39 @@ func readManifestFile(ctx context.Context, path string) ([]byte, error) {
 }
 
 func convertGitHubBlobURL(raw string) string {
+	// Normalize to https for parsing.
+	raw = strings.Replace(raw, "http://", "https://", 1)
+
 	after, ok := strings.CutPrefix(raw, "https://github.com/")
-	if !ok {
+	if ok {
+		parts := strings.SplitN(after, "/", 4)
+		if len(parts) >= 4 && parts[2] == "blob" {
+			refPath := strings.SplitN(parts[3], "/", 2)
+			ref := refPath[0]
+			filePath := ""
+			if len(refPath) > 1 {
+				filePath = "/" + refPath[1]
+			}
+			return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s%s", parts[0], parts[1], ref, filePath)
+		}
 		return raw
 	}
-	// owner/repo/blob/ref/path
-	parts := strings.SplitN(after, "/", 4)
-	if len(parts) < 4 || parts[2] != "blob" {
-		return raw
+
+	after, ok = strings.CutPrefix(raw, "https://gitlab.com/")
+	if ok {
+		parts := strings.SplitN(after, "/", 4)
+		if len(parts) >= 4 && parts[2] == "blob" {
+			refPath := strings.SplitN(parts[3], "/", 2)
+			ref := refPath[0]
+			filePath := ""
+			if len(refPath) > 1 {
+				filePath = "/" + refPath[1]
+			}
+			return fmt.Sprintf("https://gitlab.com/%s/%s/-/raw/%s%s", parts[0], parts[1], ref, filePath)
+		}
 	}
-	refPath := strings.SplitN(parts[3], "/", 2)
-	ref := refPath[0]
-	filePath := ""
-	if len(refPath) > 1 {
-		filePath = "/" + refPath[1]
-	}
-	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s%s", parts[0], parts[1], ref, filePath)
+
+	return raw
 }
 
 func fetchManifestURL(ctx context.Context, url string) ([]byte, error) {

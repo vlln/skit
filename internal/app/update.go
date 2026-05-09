@@ -67,6 +67,19 @@ func sourceString(src ManifestSource) string {
 	if src.Type == string(source.Local) {
 		return src.Locator
 	}
+	if src.Type == string(source.GitHub) || src.Type == string(source.GitLab) {
+		s := src.Locator
+		if src.Subpath != "" {
+			s += "/" + src.Subpath
+		}
+		if src.Ref != "" {
+			s += "#" + src.Ref
+		}
+		if src.Skill != "" {
+			s += "@" + src.Skill
+		}
+		return s
+	}
 	if src.URL != "" {
 		return src.URL
 	}

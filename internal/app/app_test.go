@@ -535,3 +535,176 @@ func TestSearchJSONCatalogSource(t *testing.T) {
 		t.Fatalf("search json results = %#v", results)
 	}
 }
+
+
+func TestSourceStringRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		src  ManifestSource
+	}{
+		{
+			"basic github",
+			ManifestSource{Type: "github", Locator: "owner/repo", URL: "https://github.com/owner/repo.git", Skill: "review"},
+		},
+		{
+			"github with subpath and ref",
+			ManifestSource{Type: "github", Locator: "owner/repo", URL: "https://github.com/owner/repo.git", Ref: "main", Subpath: "skills/review", Skill: "review"},
+		},
+		{
+			"local source",
+			ManifestSource{Type: "local", Locator: "/tmp/skills"},
+		},
+		{
+			"gitlab shorthand",
+			ManifestSource{Type: "gitlab", Locator: "group/repo", URL: "https://gitlab.com/group/repo.git", Skill: "lint"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := sourceString(test.src)
+			if s == "" {
+				t.Fatal("sourceString returned empty")
+			}
+			if test.src.Type == "local" {
+				if s != test.src.Locator {
+					t.Fatalf("local sourceString = %q, want %q", s, test.src.Locator)
+				}
+				return
+			}
+			if !strings.Contains(s, test.src.Skill) && test.src.Skill != "" {
+				t.Fatalf("sourceString %q missing skill %q", s, test.src.Skill)
+			}
+		})
+	}
+}
+
+func TestAddFromNamedSourceJSON(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	// Create a local skill directory (acts as a mock "repo")
+	skillDir := filepath.Join(t.TempDir(), "my-skill")
+	writeTestSkill(t, filepath.Join(skillDir, "SKILL.md"), "my-skill", "A test skill.")
+
+	catalogPath := filepath.Join(t.TempDir(), "catalog.json")
+	raw := `{
+  "schema": "skit.catalog/v1",
+  "skills": [
+    {"name": "my-skill", "install": "` + skillDir + `", "description": "A test skill."}
+  ]
+}`
+	if err := os.WriteFile(catalogPath, []byte(raw), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddSearchSource(SourceAddRequest{Name: "testcat", Type: "json", Source: catalogPath}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := AddFromNamedSource(AddFromNamedSourceRequest{
+		SourceName: "testcat",
+		SkillName:  "my-skill",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 1 || result.Entries[0].Name != "my-skill" {
+		t.Fatalf("install entries = %#v", result.Entries)
+	}
+	if len(result.ActivePaths) != 1 {
+		t.Fatalf("expected 1 active path, got %d", len(result.ActivePaths))
+	}
+}
+
+func TestAddFromNamedSourceNotFound(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	skillDir := filepath.Join(t.TempDir(), "other-skill")
+	writeTestSkill(t, filepath.Join(skillDir, "SKILL.md"), "other-skill", "Another.")
+
+	catalogPath := filepath.Join(t.TempDir(), "catalog.json")
+	raw := `{
+  "schema": "skit.catalog/v1",
+  "skills": [
+    {"name": "other-skill", "install": "` + skillDir + `", "description": "Another."}
+  ]
+}`
+	if err := os.WriteFile(catalogPath, []byte(raw), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddSearchSource(SourceAddRequest{Name: "testcat2", Type: "json", Source: catalogPath}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := AddFromNamedSource(AddFromNamedSourceRequest{
+		SourceName: "testcat2",
+		SkillName:  "nonexistent",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing skill")
+	}
+}
+
+func TestSourceEnableDisable(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	_, err := AddSearchSource(SourceAddRequest{Name: "toggle-me", Type: "json", Source: "/tmp/dummy.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sources, err := DisableSearchSource("toggle-me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sources {
+		if s.Name == "toggle-me" && s.Enabled {
+			t.Fatal("source should be disabled")
+		}
+	}
+
+	sources, err = EnableSearchSource("toggle-me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sources {
+		if s.Name == "toggle-me" && !s.Enabled {
+			t.Fatal("source should be enabled")
+		}
+	}
+}
+
+func TestAddSourceOldFormat(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	_, err := AddSearchSource(SourceAddRequest{Name: "old-school", Type: "registry", Source: "https://my-registry.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sources, err := ListSearchSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range sources {
+		if s.Name == "old-school" {
+			if s.Type != "registry" {
+				t.Fatalf("expected type registry, got %q", s.Type)
+			}
+			if s.URL != "https://my-registry.example.com" {
+				t.Fatalf("expected URL https://my-registry.example.com, got %q", s.URL)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("source not found after add")
+	}
+}

@@ -54,9 +54,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return printCommandHelp("install", stdout, stderr)
 		}
 		return runInstall(args[1:], stdout, stderr)
-	case "sources":
+	case "sources", "source":
 		if helpRequested(args[1:]) {
-			return printCommandHelp("sources", stdout, stderr)
+			return printCommandHelp("source", stdout, stderr)
 		}
 		return runSources(args[1:], stdout, stderr)
 	case "export", "bundle":
@@ -117,11 +117,15 @@ func printCommandHelp(command string, stdout, stderr io.Writer) int {
 	case "install":
 		fmt.Fprintln(stdout, "Usage:")
 		fmt.Fprintln(stdout, "  skit install [source...] [flags]")
+		fmt.Fprintln(stdout, "  skit install <source>/<skill> [flags]")
 		fmt.Fprintln(stdout, "  skit install <manifest.json> [flags]")
 		fmt.Fprintln(stdout, "  skit install [flags]    # applies ./skit.json when present")
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Install Skills into the local skit data directory and activate")
 		fmt.Fprintln(stdout, "them by linking from configured agent skill directories.")
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "With <source>/<skill> syntax, the source is looked up from")
+		fmt.Fprintln(stdout, "configured search sources and the matching skill is installed.")
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Useful flags:")
 		fmt.Fprintln(stdout, "  -a, --agent     Also activate for one or more supported agents")
@@ -132,13 +136,18 @@ func printCommandHelp(command string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "  --force         Replace an existing non-symlink active path")
 		fmt.Fprintln(stdout, "  --dry-run       Preview manifest installation without changing state")
 		fmt.Fprintln(stdout, "  --json          Print JSON")
-	case "sources":
+	case "source", "sources":
 		fmt.Fprintln(stdout, "Usage:")
-		fmt.Fprintln(stdout, "  skit sources")
-		fmt.Fprintln(stdout, "  skit sources add <name> <type> <source>")
-		fmt.Fprintln(stdout, "  skit sources remove <name>")
+		fmt.Fprintln(stdout, "  skit source")
+		fmt.Fprintln(stdout, "  skit source add [name] <url>")
+		fmt.Fprintln(stdout, "  skit source remove <name>")
+		fmt.Fprintln(stdout, "  skit source enable <name>")
+		fmt.Fprintln(stdout, "  skit source disable <name>")
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Manage search sources. Types: registry, repo, json, local.")
+		fmt.Fprintln(stdout, "Manage search sources. The type is auto-detected from the URL.")
+		fmt.Fprintln(stdout, "Supported URL forms: .json files, GitHub/GitLab repos, local")
+		fmt.Fprintln(stdout, "paths, and registry URLs. Name is optional; when omitted it is")
+		fmt.Fprintln(stdout, "derived from the URL.")
 	case "export", "bundle":
 		fmt.Fprintln(stdout, "Usage:")
 		fmt.Fprintln(stdout, "  skit export [path] [--json]")
@@ -206,7 +215,7 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  search       Search for Skills")
 	fmt.Fprintln(w, "  install      Install Skills and activate agent links")
-	fmt.Fprintln(w, "  sources      List or edit search sources")
+	fmt.Fprintln(w, "  source        List or edit search sources")
 	fmt.Fprintln(w, "  export       Write the local manifest to ./skit.json")
 	fmt.Fprintln(w, "  list         List installed Skills")
 	fmt.Fprintln(w, "  remove       Remove installed or active Skills")
@@ -325,17 +334,17 @@ func formatInstalls(count int) string {
 func runSources(args []string, stdout, stderr io.Writer) int {
 	opts, rest, err := parseCommon(args)
 	if err != nil {
-		fmt.Fprintln(stderr, "skit sources:", err)
+		fmt.Fprintln(stderr, "skit source:", err)
 		return 2
 	}
 	if opts.scope == app.Global || len(opts.skills) > 0 || len(opts.agents) > 0 || opts.all || opts.fullDepth || opts.force || opts.keep || opts.dryRun || opts.source != "" || opts.name != "" {
-		fmt.Fprintln(stderr, "skit sources: unsupported flag")
+		fmt.Fprintln(stderr, "skit source: unsupported flag")
 		return 2
 	}
 	if len(rest) == 0 {
 		sources, err := app.ListSearchSources()
 		if err != nil {
-			fmt.Fprintln(stderr, "skit sources:", err)
+			fmt.Fprintln(stderr, "skit source:", err)
 			return 1
 		}
 		if opts.json {
@@ -346,28 +355,15 @@ func runSources(args []string, stdout, stderr io.Writer) int {
 	}
 	switch rest[0] {
 	case "add":
-		if len(rest) != 4 {
-			fmt.Fprintln(stderr, "skit sources add: expected <name> <type> <source>")
-			return 2
-		}
-		sources, err := app.AddSearchSource(app.SourceAddRequest{Name: rest[1], Type: rest[2], Source: rest[3]})
-		if err != nil {
-			fmt.Fprintln(stderr, "skit sources add:", err)
-			return 1
-		}
-		if opts.json {
-			return writeJSON(stdout, stderr, sources)
-		}
-		fmt.Fprintf(stdout, "added %s\n", rest[1])
-		return 0
+		return runSourceAdd(rest[1:], opts, stdout, stderr)
 	case "remove", "rm":
 		if len(rest) != 2 {
-			fmt.Fprintln(stderr, "skit sources remove: expected <name>")
+			fmt.Fprintln(stderr, "skit source remove: expected <name>")
 			return 2
 		}
 		sources, err := app.RemoveSearchSource(rest[1])
 		if err != nil {
-			fmt.Fprintln(stderr, "skit sources remove:", err)
+			fmt.Fprintln(stderr, "skit source remove:", err)
 			return 1
 		}
 		if opts.json {
@@ -375,10 +371,174 @@ func runSources(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintf(stdout, "removed %s\n", rest[1])
 		return 0
+	case "enable":
+		if len(rest) != 2 {
+			fmt.Fprintln(stderr, "skit source enable: expected <name>")
+			return 2
+		}
+		sources, err := app.EnableSearchSource(rest[1])
+		if err != nil {
+			fmt.Fprintln(stderr, "skit source enable:", err)
+			return 1
+		}
+		if opts.json {
+			return writeJSON(stdout, stderr, sources)
+		}
+		fmt.Fprintf(stdout, "enabled %s\n", rest[1])
+		return 0
+	case "disable":
+		if len(rest) != 2 {
+			fmt.Fprintln(stderr, "skit source disable: expected <name>")
+			return 2
+		}
+		sources, err := app.DisableSearchSource(rest[1])
+		if err != nil {
+			fmt.Fprintln(stderr, "skit source disable:", err)
+			return 1
+		}
+		if opts.json {
+			return writeJSON(stdout, stderr, sources)
+		}
+		fmt.Fprintf(stdout, "disabled %s\n", rest[1])
+		return 0
 	default:
-		fmt.Fprintf(stderr, "skit sources: unknown action %q\n", rest[0])
+		fmt.Fprintf(stderr, "skit source: unknown action %q\n", rest[0])
 		return 2
 	}
+}
+
+func runSourceAdd(args []string, opts commonOptions, stdout, stderr io.Writer) int {
+	var name, url string
+	switch len(args) {
+	case 3:
+		if isSourceTypeName(args[1]) {
+			return runSourceAddOld(args, opts, stdout, stderr)
+		}
+		fmt.Fprintln(stderr, "skit source add: expected [name] <url>")
+		return 2
+	case 2:
+		name = args[0]
+		url = args[1]
+	case 1:
+		url = args[0]
+		name = deriveSourceName(url)
+	default:
+		fmt.Fprintln(stderr, "skit source add: expected [name] <url>")
+		return 2
+	}
+	typ := detectSourceType(url)
+	sources, err := app.AddSearchSource(app.SourceAddRequest{Name: name, Type: typ, Source: url})
+	if err != nil {
+		fmt.Fprintln(stderr, "skit source add:", err)
+		return 1
+	}
+	if opts.json {
+		return writeJSON(stdout, stderr, sources)
+	}
+	fmt.Fprintf(stdout, "added %s (%s)\n", name, typ)
+	return 0
+}
+
+func runSourceAddOld(args []string, opts commonOptions, stdout, stderr io.Writer) int {
+	sources, err := app.AddSearchSource(app.SourceAddRequest{Name: args[0], Type: args[1], Source: args[2]})
+	if err != nil {
+		fmt.Fprintln(stderr, "skit source add:", err)
+		return 1
+	}
+	if opts.json {
+		return writeJSON(stdout, stderr, sources)
+	}
+	fmt.Fprintf(stdout, "added %s\n", args[0])
+	return 0
+}
+
+func isSourceTypeName(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "registry", "repo", "json", "local":
+		return true
+	}
+	return false
+}
+
+func detectSourceType(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if strings.HasSuffix(raw, ".json") {
+		return "json"
+	}
+	if strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "../") || strings.HasPrefix(raw, "/") {
+		return "local"
+	}
+	if strings.Contains(raw, "://") {
+		if strings.Contains(raw, "github.com/") || strings.Contains(raw, "gitlab.com/") {
+			return "repo"
+		}
+		return "registry"
+	}
+	return "repo"
+}
+
+func deriveSourceName(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if strings.Contains(raw, "://") {
+		s := raw
+		if idx := strings.Index(s, "?"); idx >= 0 {
+			s = s[:idx]
+		}
+		if idx := strings.Index(s, "#"); idx >= 0 {
+			s = s[:idx]
+		}
+		s = strings.TrimRight(s, "/")
+		if idx := strings.LastIndex(s, "/"); idx >= 0 {
+			name := s[idx+1:]
+			name = strings.TrimSuffix(name, ".json")
+			if name != "" {
+				return name
+			}
+		}
+		return "source"
+	}
+	if strings.HasPrefix(raw, ".") || strings.HasPrefix(raw, "/") || strings.HasSuffix(raw, ".json") {
+		base := raw
+		if idx := strings.LastIndex(base, "/"); idx >= 0 {
+			base = base[idx+1:]
+		}
+		return strings.TrimSuffix(base, ".json")
+	}
+	parts := strings.SplitN(raw, "/", 3)
+	if len(parts) >= 2 {
+		repo := parts[1]
+		if idx := strings.LastIndex(repo, "@"); idx >= 0 {
+			repo = repo[:idx]
+		}
+		return repo
+	}
+	return raw
+}
+
+func parseNamespacedInstall(raw string) (string, string, bool) {
+	raw = strings.TrimSpace(raw)
+	if strings.Contains(raw, "://") || strings.HasPrefix(raw, ".") || strings.HasPrefix(raw, "/") {
+		return "", "", false
+	}
+	if strings.Contains(raw, "@") {
+		return "", "", false
+	}
+	idx := strings.LastIndex(raw, "/")
+	if idx <= 0 || idx >= len(raw)-1 {
+		return "", "", false
+	}
+	sourceName := raw[:idx]
+	skillName := raw[idx+1:]
+	sources, err := app.ListSearchSources()
+	if err != nil {
+		return "", "", false
+	}
+	for _, s := range sources {
+		if s.Name == sourceName {
+			return sourceName, skillName, true
+		}
+	}
+	return "", "", false
 }
 
 func printSources(stdout io.Writer, sources []app.SearchSource) {
@@ -440,6 +600,28 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	for _, src := range rest {
+		if sourceName, skillName, ok := parseNamespacedInstall(src); ok {
+			if opts.all {
+				fmt.Fprintln(stderr, "skit install: --all cannot be used with named source install")
+				return 2
+			}
+			result, err := app.AddFromNamedSource(app.AddFromNamedSourceRequest{
+				CWD:        cwd(),
+				Scope:      opts.scope,
+				SourceName: sourceName,
+				SkillName:  skillName,
+				Name:       opts.name,
+				Agents:     opts.agents,
+				Force:      opts.force,
+				Progress:   installProgress(stderr, opts.json),
+			})
+			if err != nil {
+				fmt.Fprintln(stderr, "skit install:", err)
+				return 1
+			}
+			printAddResult(stdout, stderr, result)
+			continue
+		}
 		result, err := app.Add(app.AddRequest{
 			CWD:       cwd(),
 			Scope:     opts.scope,

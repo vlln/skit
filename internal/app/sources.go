@@ -159,6 +159,40 @@ func writeSourcesFile(file SourcesFile) error {
 	return os.WriteFile(path, raw, 0644)
 }
 
+func EnableSearchSource(name string) ([]SearchSource, error) {
+	return setSourceEnabled(name, true)
+}
+
+func DisableSearchSource(name string) ([]SearchSource, error) {
+	return setSourceEnabled(name, false)
+}
+
+func setSourceEnabled(name string, enabled bool) ([]SearchSource, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("source name is required")
+	}
+	file, err := readSourcesFile()
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for i := range file.Sources {
+		if file.Sources[i].Name == name {
+			file.Sources[i].Enabled = enabled
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("source %q not found", name)
+	}
+	if err := writeSourcesFile(file); err != nil {
+		return nil, err
+	}
+	return ListSearchSources()
+}
+
 func normalizeSourcesFile(file SourcesFile) SourcesFile {
 	if file.Schema == "" {
 		file.Schema = sourcesSchema
