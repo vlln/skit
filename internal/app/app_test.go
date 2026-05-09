@@ -536,7 +536,6 @@ func TestSearchJSONCatalogSource(t *testing.T) {
 	}
 }
 
-
 func TestSourceStringRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string

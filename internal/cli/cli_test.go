@@ -321,7 +321,6 @@ func writeCLITestSkill(t *testing.T, path, name string) {
 	}
 }
 
-
 func TestSourceCommandCLI(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
