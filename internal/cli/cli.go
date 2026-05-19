@@ -43,6 +43,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		fmt.Fprintf(stdout, "skit %s\n", version)
+		maybePrintUpdate(stderr)
 		return 0
 	case "search", "find":
 		if helpRequested(args[1:]) {
