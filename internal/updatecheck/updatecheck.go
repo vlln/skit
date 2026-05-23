@@ -76,11 +76,45 @@ func Check(ctx context.Context, req Request) (Result, error) {
 }
 
 func Message(result Result) string {
-	url := result.URL
-	if url == "" {
-		url = "https://github.com/vlln/skit/releases/latest"
+	if !result.Available {
+		return ""
 	}
-	return fmt.Sprintf("update available: skit %s is available (current %s); see %s", result.Latest, result.Current, url)
+	return fmt.Sprintf("update available: %s → %s. Upgrade: %s",
+		result.Current, result.Latest, UpgradeCommand(result.Latest))
+}
+
+func UpgradeCommand(target string) string {
+	if target == "" {
+		target = "latest"
+	}
+	tag := target
+	if !strings.HasPrefix(tag, "v") {
+		tag = "v" + tag
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return installScriptCmd()
+	}
+	resolved, _ := filepath.EvalSymlinks(exe)
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			gopath = filepath.Join(home, "go")
+		}
+	}
+
+	if strings.Contains(resolved, "/Cellar/") || strings.Contains(resolved, "/homebrew/") {
+		return "brew upgrade skit"
+	}
+	if gopath != "" && strings.Contains(resolved, filepath.Join(gopath, "bin")) {
+		return fmt.Sprintf("go install github.com/vlln/skit/cmd/skit@%s", tag)
+	}
+	return installScriptCmd()
+}
+
+func installScriptCmd() string {
+	return "curl -fsSL https://raw.githubusercontent.com/vlln/skit/main/install.sh | sh"
 }
 
 func disabled() bool {
