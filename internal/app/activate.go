@@ -36,6 +36,9 @@ func ActivateInstalled(req ActivateInstalledRequest) (AddResult, error) {
 		}
 		return result, err
 	}
+	if _, err := skill.ParseDir(installDir); err != nil {
+		return result, fmt.Errorf("%s is installed but local skill is invalid: %w", req.Name, err)
+	}
 
 	agents := entry.Agents
 	if len(req.Agents) > 0 {
@@ -44,7 +47,7 @@ func ActivateInstalled(req ActivateInstalledRequest) (AddResult, error) {
 	if len(agents) == 0 {
 		agents = uniqueAgents(nil)
 	}
-	activeDirs, err := manifestActiveDirs(agents)
+	activeDirs, err := manifestActiveDirs(req.Scope, req.CWD, agents)
 	if err != nil {
 		return result, err
 	}

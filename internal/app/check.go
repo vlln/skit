@@ -45,7 +45,7 @@ func Check(req DoctorRequest) (DoctorResult, error) {
 		if _, err := os.Stat(filepath.Join(installDir, "SKILL.md")); err != nil {
 			result.Checks = append(result.Checks, DoctorCheck{Severity: "error", Code: "missing-skill-md", Skill: name, Message: "SKILL.md is missing"})
 		}
-		dirs, err := manifestActiveDirs(entry.Agents)
+		dirs, err := manifestActiveDirs(req.Scope, req.CWD, entry.Agents)
 		if err != nil {
 			return result, err
 		}

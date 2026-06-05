@@ -38,7 +38,7 @@ func Remove(req RemoveRequest) (RemoveResult, error) {
 	installDir := filepath.Join(dataRoot(), filepath.FromSlash(entry.Path))
 	if len(req.Agents) > 0 {
 		for _, agent := range req.Agents {
-			dir, err := activeDirForManifestAgent(agent)
+			dir, err := activeDirForManifestAgent(req.Scope, req.CWD, agent)
 			if err != nil {
 				return result, err
 			}
@@ -53,7 +53,9 @@ func Remove(req RemoveRequest) (RemoveResult, error) {
 			if skipped != "" {
 				result.Skipped = append(result.Skipped, skipped)
 			}
-			entry.Agents = withoutAgent(entry.Agents, agent)
+			if removed {
+				entry.Agents = withoutAgent(entry.Agents, agent)
+			}
 		}
 		manifest.Skills[req.Name] = entry
 		if err := writeManifestFile(manifest); err != nil {
@@ -63,7 +65,7 @@ func Remove(req RemoveRequest) (RemoveResult, error) {
 		result.StillTracked = true
 		return result, nil
 	}
-	dirs, err := manifestActiveDirs(entry.Agents)
+	dirs, err := manifestActiveDirs(req.Scope, req.CWD, entry.Agents)
 	if err != nil {
 		return result, err
 	}
@@ -94,12 +96,12 @@ func Remove(req RemoveRequest) (RemoveResult, error) {
 	return result, nil
 }
 
-func activeDirForManifestAgent(agent string) (string, error) {
+func activeDirForManifestAgent(scope Scope, cwd, agent string) (string, error) {
 	if agent == "universal" || agent == "" {
-		dirs, _ := manifestActiveDirs([]string{"universal"})
+		dirs, _ := manifestActiveDirs(Global, "", []string{"universal"})
 		return dirs[0], nil
 	}
-	return agentActiveDir(Global, "", agent)
+	return agentActiveDir(scope, cleanCWD(cwd), agent)
 }
 
 func unlinkManaged(link, target string) (bool, string, error) {

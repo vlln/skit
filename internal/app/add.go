@@ -113,7 +113,7 @@ func Add(req AddRequest) (AddResult, error) {
 		return result, err
 	}
 	agents := uniqueAgents(req.Agents)
-	activeDirs, err := manifestActiveDirs(agents)
+	activeDirs, err := manifestActiveDirs(req.Scope, req.CWD, agents)
 	if err != nil {
 		return result, err
 	}
@@ -160,7 +160,7 @@ func Add(req AddRequest) (AddResult, error) {
 	return result, nil
 }
 
-func manifestActiveDirs(agents []string) ([]string, error) {
+func manifestActiveDirs(scope Scope, cwd string, agents []string) ([]string, error) {
 	var dirs []string
 	seen := map[string]bool{}
 	for _, agent := range agents {
@@ -168,7 +168,7 @@ func manifestActiveDirs(agents []string) ([]string, error) {
 		if agent == "universal" {
 			dir = filepath.Join(userHome(), ".agents", "skills")
 		} else {
-			got, err := agentActiveDir(Global, "", agent)
+			got, err := agentActiveDir(scope, cleanCWD(cwd), agent)
 			if err != nil {
 				return nil, err
 			}

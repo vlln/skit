@@ -243,22 +243,27 @@ func TestActivateInstalledSkillByName(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	cwd := t.TempDir()
 
 	src := t.TempDir()
 	writeTestSkill(t, filepath.Join(src, "SKILL.md"), "demo", "Demo skill")
 	if _, err := Add(AddRequest{Source: src}); err != nil {
 		t.Fatal(err)
 	}
-	result, err := ActivateInstalled(ActivateInstalledRequest{Name: "demo", Agents: []string{"codex"}})
+	result, err := ActivateInstalled(ActivateInstalledRequest{CWD: cwd, Scope: Project, Name: "demo", Agents: []string{"codex"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Entries) != 1 || result.Entries[0].Name != "demo" {
 		t.Fatalf("result entries = %#v", result.Entries)
 	}
-	codexLink := filepath.Join(home, ".codex", "skills", "demo")
-	if _, err := os.Lstat(codexLink); err != nil {
-		t.Fatalf("codex active link missing: %v", err)
+	projectLink := filepath.Join(cwd, ".agents", "skills", "demo")
+	if _, err := os.Lstat(projectLink); err != nil {
+		t.Fatalf("project codex active link missing: %v", err)
+	}
+	globalLink := filepath.Join(home, ".codex", "skills", "demo")
+	if _, err := os.Lstat(globalLink); !os.IsNotExist(err) {
+		t.Fatalf("global codex link should not exist for project activation: %v", err)
 	}
 	manifest, err := readManifest()
 	if err != nil {
@@ -267,6 +272,89 @@ func TestActivateInstalledSkillByName(t *testing.T) {
 	agents := strings.Join(manifest.Skills["demo"].Agents, ",")
 	if agents != "universal,codex" {
 		t.Fatalf("agents = %q", agents)
+	}
+}
+
+func TestActivateInstalledGlobalAgentByName(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	src := t.TempDir()
+	writeTestSkill(t, filepath.Join(src, "SKILL.md"), "demo", "Demo skill")
+	if _, err := Add(AddRequest{Source: src}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ActivateInstalled(ActivateInstalledRequest{Scope: Global, Name: "demo", Agents: []string{"codex"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".codex", "skills", "demo")); err != nil {
+		t.Fatalf("global codex active link missing: %v", err)
+	}
+}
+
+func TestActivateInstalledRejectsInvalidInstalledSkill(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+
+	src := t.TempDir()
+	writeTestSkill(t, filepath.Join(src, "SKILL.md"), "demo", "Demo skill")
+	if _, err := Add(AddRequest{Source: src}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(installedSkillsRoot(), "demo", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ActivateInstalled(ActivateInstalledRequest{CWD: cwd, Scope: Project, Name: "demo", Agents: []string{"codex"}})
+	if err == nil || !strings.Contains(err.Error(), "local skill is invalid") {
+		t.Fatalf("expected invalid installed skill error, got %v", err)
+	}
+}
+
+func TestAddFailurePreservesExistingInstall(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	src := t.TempDir()
+	writeTestSkill(t, filepath.Join(src, "SKILL.md"), "demo", "Original")
+	if _, err := Add(AddRequest{Source: src}); err != nil {
+		t.Fatal(err)
+	}
+	bad := t.TempDir()
+	writeTestSkill(t, filepath.Join(bad, "SKILL.md"), "demo", "Replacement")
+	if err := os.Symlink(filepath.Join(bad, "SKILL.md"), filepath.Join(bad, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Add(AddRequest{Source: bad})
+	if err == nil {
+		t.Fatal("expected non-regular file error")
+	}
+	raw, readErr := os.ReadFile(filepath.Join(installedSkillsRoot(), "demo", "SKILL.md"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(raw), "Original") {
+		t.Fatalf("existing install was not preserved: %s", raw)
+	}
+}
+
+func TestAddRejectsInstallFromDestination(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	src := t.TempDir()
+	writeTestSkill(t, filepath.Join(src, "SKILL.md"), "demo", "Demo skill")
+	if _, err := Add(AddRequest{Source: src}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Add(AddRequest{Source: filepath.Join(installedSkillsRoot(), "demo")})
+	if err == nil || !strings.Contains(err.Error(), "refusing to install skill from its destination") {
+		t.Fatalf("expected destination install rejection, got %v", err)
 	}
 }
 
@@ -342,6 +430,38 @@ func TestRemoveKeepLeavesSkillOnDisk(t *testing.T) {
 	listed, _ := List(ListRequest{})
 	if len(listed) != 0 {
 		t.Fatalf("should not be listed in manifest: %#v", listed)
+	}
+}
+
+func TestRemoveAgentKeepsManifestAgentWhenUnlinkSkipped(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	src := t.TempDir()
+	writeTestSkill(t, filepath.Join(src, "SKILL.md"), "demo", "Demo skill")
+	if _, err := Add(AddRequest{Scope: Global, Source: src, Agents: []string{"codex"}}); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, ".codex", "skills", "demo")
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Remove(RemoveRequest{Scope: Global, Name: "demo", Agents: []string{"codex"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Skipped) != 1 {
+		t.Fatalf("expected skipped unlink, got %#v", result)
+	}
+	manifest, err := readManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := strings.Join(manifest.Skills["demo"].Agents, ",")
+	if agents != "universal,codex" {
+		t.Fatalf("agent should remain tracked after skipped unlink, got %q", agents)
 	}
 }
 

@@ -639,7 +639,7 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 			Progress:  installProgress(stderr, opts.json),
 		})
 		if err != nil {
-			if canActivateInstalledFallback(src, opts) {
+			if canActivateInstalledFallback(src, opts, err) {
 				result, activateErr := app.ActivateInstalled(app.ActivateInstalledRequest{
 					CWD:    cwd(),
 					Scope:  opts.scope,
@@ -718,8 +718,8 @@ func isManifestFile(path string) bool {
 	return strings.HasSuffix(path, ".json")
 }
 
-func canActivateInstalledFallback(raw string, opts commonOptions) bool {
-	return opts.name == "" && len(opts.skills) == 0 && !opts.all && !opts.fullDepth && isBareSkillName(raw)
+func canActivateInstalledFallback(raw string, opts commonOptions, err error) bool {
+	return err != nil && strings.Contains(err.Error(), "unsupported source") && opts.name == "" && len(opts.skills) == 0 && !opts.all && !opts.fullDepth && isBareSkillName(raw)
 }
 
 func isBareSkillName(raw string) bool {

@@ -71,6 +71,8 @@ func TestInstallBareInstalledNameActivatesAgentCLI(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	cwd := t.TempDir()
+	t.Chdir(cwd)
 
 	src := t.TempDir()
 	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "demo")
@@ -87,8 +89,46 @@ func TestInstallBareInstalledNameActivatesAgentCLI(t *testing.T) {
 	if !strings.Contains(stdout.String(), "installed demo") {
 		t.Fatalf("activate stdout = %q", stdout.String())
 	}
+	if _, err := os.Lstat(filepath.Join(cwd, ".agents", "skills", "demo")); err != nil {
+		t.Fatalf("project codex active link missing: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".codex", "skills", "demo")); !os.IsNotExist(err) {
+		t.Fatalf("global codex link should not exist for project activation: %v", err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"install", "demo", "--global", "--agent", "codex"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("global activate installed code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
 	if _, err := os.Lstat(filepath.Join(home, ".codex", "skills", "demo")); err != nil {
-		t.Fatalf("codex active link missing: %v", err)
+		t.Fatalf("global codex active link missing: %v", err)
+	}
+}
+
+func TestInstallBareNameDoesNotFallbackWhenLocalSourceFailsCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+
+	src := t.TempDir()
+	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "demo")
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"install", src}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if err := os.MkdirAll(filepath.Join(cwd, "demo"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"install", "demo"}, &stdout, &stderr); code == 0 {
+		t.Fatalf("install should fail for invalid local source stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "no skills found") || strings.Contains(stdout.String(), "installed demo") {
+		t.Fatalf("install stderr should report local source error, got %q", stderr.String())
 	}
 }
 

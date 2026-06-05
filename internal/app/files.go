@@ -14,9 +14,67 @@ func copySkillTree(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.RemoveAll(dst); err != nil {
+	dstAbs, err := filepath.Abs(dst)
+	if err != nil {
 		return err
 	}
+	if samePath(srcAbs, dstAbs) {
+		return fmt.Errorf("refusing to install skill from its destination: %s", dst)
+	}
+	parent := filepath.Dir(dstAbs)
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp(parent, ".copy-*")
+	if err != nil {
+		return err
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.RemoveAll(tmp)
+		}
+	}()
+	if err := copySkillTreeInto(srcAbs, tmp); err != nil {
+		return err
+	}
+	if err := replaceDir(dstAbs, tmp); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
+func replaceDir(dst, next string) error {
+	backup := ""
+	if _, err := os.Lstat(dst); err == nil {
+		tmp, err := os.MkdirTemp(filepath.Dir(dst), ".replace-*")
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(tmp); err != nil {
+			return err
+		}
+		backup = tmp
+		if err := os.Rename(dst, backup); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(next, dst); err != nil {
+		if backup != "" {
+			_ = os.Rename(backup, dst)
+		}
+		return err
+	}
+	if backup != "" {
+		_ = os.RemoveAll(backup)
+	}
+	return nil
+}
+
+func copySkillTreeInto(srcAbs, dst string) error {
 	return filepath.WalkDir(srcAbs, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

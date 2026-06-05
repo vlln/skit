@@ -48,7 +48,7 @@ func List(req ListRequest) ([]ListEntry, error) {
 		if _, err := os.Stat(filepath.Join(installDir, "SKILL.md")); err != nil {
 			item.Missing = true
 		}
-		dirs, err := manifestActiveDirs(entry.Agents)
+		dirs, err := manifestActiveDirs(req.Scope, req.CWD, entry.Agents)
 		if err != nil {
 			return nil, err
 		}
