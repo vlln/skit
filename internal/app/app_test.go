@@ -238,6 +238,38 @@ func TestUpdateNoSkillsInstalled(t *testing.T) {
 	}
 }
 
+func TestActivateInstalledSkillByName(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	src := t.TempDir()
+	writeTestSkill(t, filepath.Join(src, "SKILL.md"), "demo", "Demo skill")
+	if _, err := Add(AddRequest{Source: src}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ActivateInstalled(ActivateInstalledRequest{Name: "demo", Agents: []string{"codex"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 1 || result.Entries[0].Name != "demo" {
+		t.Fatalf("result entries = %#v", result.Entries)
+	}
+	codexLink := filepath.Join(home, ".codex", "skills", "demo")
+	if _, err := os.Lstat(codexLink); err != nil {
+		t.Fatalf("codex active link missing: %v", err)
+	}
+	manifest, err := readManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := strings.Join(manifest.Skills["demo"].Agents, ",")
+	if agents != "universal,codex" {
+		t.Fatalf("agents = %q", agents)
+	}
+}
+
 func TestExportManifestToDefaultPath(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())

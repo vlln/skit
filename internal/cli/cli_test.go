@@ -66,6 +66,32 @@ func TestInstallNameCLI(t *testing.T) {
 	}
 }
 
+func TestInstallBareInstalledNameActivatesAgentCLI(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	src := t.TempDir()
+	writeCLITestSkill(t, filepath.Join(src, "SKILL.md"), "demo")
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"install", src}, &stdout, &stderr); code != 0 {
+		t.Fatalf("install code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"install", "demo", "--agent", "codex"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("activate installed code = %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "installed demo") {
+		t.Fatalf("activate stdout = %q", stdout.String())
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".codex", "skills", "demo")); err != nil {
+		t.Fatalf("codex active link missing: %v", err)
+	}
+}
+
 func TestListAllCLI(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())

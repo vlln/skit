@@ -119,6 +119,7 @@ func printCommandHelp(command string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "Usage:")
 		fmt.Fprintln(stdout, "  skit install [source...] [flags]")
 		fmt.Fprintln(stdout, "  skit install <source>/<skill> [flags]")
+		fmt.Fprintln(stdout, "  skit install <installed-skill> --agent <agent>")
 		fmt.Fprintln(stdout, "  skit install <manifest.json> [flags]")
 		fmt.Fprintln(stdout, "  skit install [flags]    # applies ./skit.json when present")
 		fmt.Fprintln(stdout)
@@ -127,6 +128,8 @@ func printCommandHelp(command string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "With <source>/<skill> syntax, the source is looked up from")
 		fmt.Fprintln(stdout, "configured search sources and the matching skill is installed.")
+		fmt.Fprintln(stdout, "With an already installed Skill name, install activates or repairs")
+		fmt.Fprintln(stdout, "agent links without re-fetching the source.")
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Useful flags:")
 		fmt.Fprintln(stdout, "  -a, --agent     Also activate for one or more supported agents")
@@ -636,6 +639,22 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 			Progress:  installProgress(stderr, opts.json),
 		})
 		if err != nil {
+			if canActivateInstalledFallback(src, opts) {
+				result, activateErr := app.ActivateInstalled(app.ActivateInstalledRequest{
+					CWD:    cwd(),
+					Scope:  opts.scope,
+					Name:   src,
+					Agents: opts.agents,
+					Force:  opts.force,
+				})
+				if activateErr == nil {
+					printAddResult(stdout, stderr, result)
+					continue
+				}
+				if !strings.Contains(err.Error(), "unsupported source") || !strings.Contains(activateErr.Error(), "is not installed") {
+					err = activateErr
+				}
+			}
 			fmt.Fprintln(stderr, "skit install:", err)
 			return 1
 		}
@@ -697,6 +716,23 @@ func printDryRunResult(stdout, stderr io.Writer, result app.AddResult) {
 
 func isManifestFile(path string) bool {
 	return strings.HasSuffix(path, ".json")
+}
+
+func canActivateInstalledFallback(raw string, opts commonOptions) bool {
+	return opts.name == "" && len(opts.skills) == 0 && !opts.all && !opts.fullDepth && isBareSkillName(raw)
+}
+
+func isBareSkillName(raw string) bool {
+	if raw == "" || strings.ContainsAny(raw, `/\#@:`) || strings.HasPrefix(raw, ".") {
+		return false
+	}
+	for _, r := range raw {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func printAddResult(stdout, stderr io.Writer, result app.AddResult) {
