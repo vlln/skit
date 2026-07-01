@@ -1,69 +1,53 @@
-# <repo-name>
+<h1 align="center"><skill-title></h1>
 
-Agent Skills for <short-purpose>.
+<p align="center">
+  <strong>One-line value proposition.</strong><br/>
+  Two to three lines describing what the skills do, the target audience,
+  and the key benefit.
+</p>
 
-This repository stores skills under `skills/`. Each skill follows the
-[Agent Skills specification](https://agentskills.io/specification) and can be
-used by skills-compatible agents.
+<p align="center">
+  <a href="https://github.com/<owner>/<repo>/stargazers"><img src="https://badgen.net/github/stars/<owner>/<repo>?label=%E2%98%85" alt="GitHub stars" /></a>
+  <img src="https://badgen.net/badge/license/<license>/blue" alt="<license>" />
+  <img src="https://badgen.net/badge/spec/Agent%20Skills/8257D0" alt="Agent Skills spec" />
+</p>
+
+<p align="center">
+  <sub><a href="README.md">English</a> · <a href="docs/readme/README.zh-CN.md">中文</a></sub>
+</p>
+
+---
+
+## Installation
+
+### [skit](https://github.com/vlln/skit) (Recommended)
+
+```bash
+skit install ./<repo-name> --all
+```
+
+### [skills](https://github.com/bananaml/skills)
+
+```bash
+npx skills add git@github.com:<owner>/<repo>.git
+```
+
+### Manually
+
+| Agent | Command |
+|-------|---------|
+| **Claude Code** | `cp -r skills/<skill-name> .claude/skills/` |
+| **Codex** | `cp -r skills/<skill-name> ~/.codex/skills/` |
+| **OpenCode** | `git clone https://github.com/<owner>/<repo>.git ~/.opencode/skills/<repo-name>` |
+| **Kimi** | `cp -r skills/<skill-name> ~/.kimi/skills/` |
+
+---
 
 ## Skills
 
 | Skill | Description |
 |-------|-------------|
-| [`<skill-name>`](skills/<skill-name>) | <one-sentence description> |
-
-## Quick Start
-
-Paste this into your AI agent (Claude Code, Cursor, OpenAI Assistants, etc.):
-
-```text
-Install the Agent Skills from https://raw.githubusercontent.com/<owner>/<repo>/main/README.md
-```
-
-## Installation
-
-Recommended: install these skills with
-`skit`. It fetches skills from the published repository, records them in a local
-manifest, and activates them for local agents.
-
-### skit
-
-Install `skit` with Homebrew:
-
-```sh
-brew install vlln/tap/skit
-```
-
-For other platforms, see the `skit` installation instructions.
-
-Install one skill:
-
-```sh
-skit install <owner>/<repo>/skills/<skill-name>
-```
-
-Install all skills in this repository:
-
-```sh
-skit install <owner>/<repo> --all
-```
-
-### npx skills
-
-```sh
-npx skills add <owner>/<repo>
-```
-
-### Manual
-
-Copy the desired skill directory from `skills/<skill-name>` into your agent's
-skills directory, then restart the agent if required.
-
-Common locations:
-
-- Codex CLI: `~/.codex/skills`
-- Claude Code: `.claude/skills` in the project, or the configured user skills directory
-- OpenCode: `~/.opencode/skills/<repo-name>`
+| [<skill-name>](skills/<skill-name>/SKILL.md) | One-line description. |
 
 ## Requirements
 
