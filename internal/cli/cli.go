@@ -285,23 +285,14 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "no skills found for %q\n", query)
 		return 0
 	}
+	fmt.Fprintf(stdout, "SOURCE\tINSTALLS\tDESCRIPTION\n")
 	for _, result := range results {
 		target := formatSearchTarget(result)
 		installs := formatInstalls(result.Installs)
-		line := target
-		if installs != "" {
-			line += "  " + installs
-		}
-		fmt.Fprintln(stdout, line)
-		if result.Description != "" {
-			fmt.Fprintf(stdout, "  %s\n", result.Description)
-		}
-		if result.Slug != "" {
-			fmt.Fprintf(stdout, "  https://skills.sh/%s\n", result.Slug)
-		}
-		fmt.Fprintln(stdout)
+		desc := truncate(result.Description, 80)
+		fmt.Fprintf(stdout, "%s\t%s\t%s\n", target, installs, desc)
 	}
-	fmt.Fprintln(stdout, "use: skit install <source@skill>")
+	fmt.Fprintln(stdout, "\nuse: skit install <source@skill>")
 	return 0
 }
 
@@ -1039,6 +1030,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	exit := 0
+	fmt.Fprintf(stdout, "SEVERITY\tCODE\tSKILL\tMESSAGE\n")
 	for _, check := range result.Checks {
 		if check.Severity == "error" {
 			exit = 1
