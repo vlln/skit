@@ -50,7 +50,10 @@ Use `make-skill` for this skill. It is short, imperative, and Unix-like.
 
 ## Frontmatter Template
 
-Start from this template and remove fields that do not apply:
+Start from this template and remove fields that do not apply. For a minimal
+skill, only `name` and `description` are needed — everything else is optional.
+
+Full template:
 
 ```yaml
 ---
@@ -145,6 +148,51 @@ Recommended sections:
 [Expected artifact, command, patch, or response shape.]
 ```
 
+## Audience Separation
+
+A skill repository has three audiences with distinct needs. Keep them strictly
+separated — never leak information from one audience's file into another's.
+
+| Audience | File | Purpose |
+|----------|------|---------|
+| Human user | `README.md` | Decide whether to install. Install instructions, skill list, value proposition. |
+| Agent using the skill | `SKILL.md` | When to activate, what to do, boundaries, how to validate. |
+| Skill developer | `references/`, commit messages | Design decisions, architecture rationale, why things are the way they are. |
+
+Rules:
+
+- `SKILL.md` must not contain development history ("we discussed X so we chose
+  Y"), design rationale, or why a particular approach was taken.
+- `SKILL.md` must not contain references to the repository structure beyond what
+  the agent needs to navigate (e.g. `references/api.md` is fine; "we put this
+  in scripts/ to keep the skill clean" is not).
+- `README.md` must not describe how the agent should use the skill internally.
+- When writing a skill, you are the developer. The skill you write is for the
+  agent. Do not confuse the two roles — the agent that reads the skill does not
+  need to know what you were thinking.
+
+## Abstraction vs Implementation
+
+`SKILL.md` declares **intent and capability**, not implementation. The agent
+reading the skill needs to know what it can do and when, not how it is done
+under the hood.
+
+- **Declaration** (put in SKILL.md): "Extract text and tables from PDF files."
+- **Implementation** (put in `scripts/` or `references/`): "Run `scripts/parse.py --format json`."
+
+Do not write the implementation as the primary description. If the skill body
+says "use `scripts/foo.py` to do X", the skill breaks when the script is
+renamed or replaced. Instead say "do X" and let the agent discover the script
+through the file system or a `references/` index.
+
+Implementation details belong in:
+- `scripts/` — executable helpers the agent runs
+- `references/` — detailed specs, API docs, schemas
+- `assets/` — templates or static resources
+
+`SKILL.md` should remain readable even if every implementation file is swapped
+out.
+
 ## Content Constraints
 
 These constraints apply to every agent-facing artifact: `SKILL.md`, helper
@@ -178,6 +226,12 @@ Do not include:
 - machine-oriented JSON schemas unless the skill specifically requires
   structured data output
 - repeated command prefixes or boilerplate that the agent can infer
+- **development context**: discussions, decisions, trade-offs, or rationale
+  behind why the skill is structured a certain way
+- **implementation as description**: using a script path as the primary
+  description of what the skill does
+- **repository self-reference**: "this repository", "we use", "the skill
+  author decided" — the agent does not need this meta-information
 
 If detailed reference material is needed, put it in `references/` and tell the
 agent exactly when to read it.
@@ -211,6 +265,12 @@ Before finishing, check:
   cases without boilerplate phrasing.
 - Required tools/env/platforms are real and minimal.
 - Each skill body is procedural, concise, and domain-specific.
+- No development context, design rationale, or repository self-reference has
+  leaked into any `SKILL.md`.
+- `SKILL.md` describes intent and capability, not implementation paths.
+  Script paths appear only in concrete steps, never as the primary description
+  of what the skill does.
+- `README.md` is human-facing and does not describe agent-internal mechanics.
 - Agent-facing files are high-density, low-noise, and non-repetitive.
 - Any examples are runnable or clearly marked as templates.
 - The root README is human-facing and lists all public skills.
