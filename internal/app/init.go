@@ -91,11 +91,6 @@ func skillTemplate(name string) string {
 		"# Optional: discovery & activation ─────────────────\n" +
 		"# when-to-use: >\n" +
 		"#   TODO: additional trigger context.\n" +
-		"# allowed-tools:\n" +
-		"#   - Bash(git:*)\n" +
-		"#   - Read\n" +
-		"# disallowed-tools:\n" +
-		"#   - AskUserQuestion\n" +
 		"# argument-hint: <file> [format]\n" +
 		"# arguments:\n" +
 		"#   - file\n" +
@@ -113,9 +108,6 @@ func skillTemplate(name string) string {
 		"# requires:\n" +
 		"#   bins:\n" +
 		"#     - TODO-command\n" +
-		"#   any-bins:\n" +
-		"#     - pdftotext\n" +
-		"#     - mutool\n" +
 		"#   env:\n" +
 		"#     - TODO_ENV_VAR\n" +
 		"#   config:\n" +
