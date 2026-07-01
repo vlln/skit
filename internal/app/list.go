@@ -89,7 +89,7 @@ func scanVisibleSkills(req ListRequest, byName map[string]*ListEntry) error {
 				continue
 			}
 			dir := filepath.Join(root.Dir, entry.Name())
-			parsed, err := skill.ParseDirWithOptions(dir, skill.ParseOptions{AllowNameMismatch: true})
+			parsed, err := skill.ParseDirWithOptions(dir, skill.ParseOptions{})
 			if err != nil {
 				continue
 			}

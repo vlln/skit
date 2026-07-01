@@ -87,25 +87,25 @@ func skillTemplate(name string) string {
 		"description: \"TODO: describe " + name + ".\"\n" +
 		"# Optional: uncomment fields that apply.\n" +
 		"# license: MIT\n" +
-		"# compatibility: Requires TODO tool/account/platform.\n" +
+		"# when-to-use: \"TODO: additional trigger context.\"\n" +
+		"# allowed-tools:\n" +
+		"#   - Bash(git:*)\n" +
+		"#   - Read\n" +
 		"metadata:\n" +
-		"  skit:\n" +
-		"    version: 0.1.0\n" +
-		"    # Optional: keywords help search and discovery.\n" +
-		"    # keywords:\n" +
-		"    #   - TODO-keyword\n" +
-		"    # Optional: requirements the agent can diagnose before use.\n" +
-		"    # requires:\n" +
-		"    #   bins:\n" +
-		"    #     - TODO-command\n" +
-		"    #   env:\n" +
-		"    #     - TODO_ENV_VAR\n" +
-		"    #   skills:\n" +
-		"    #     - github:owner/repo@required-skill\n" +
-		"    #   platforms:\n" +
-		"    #     os:\n" +
-		"    #       - linux\n" +
-		"    #       - darwin\n" +
+		"  author: TODO\n" +
+		"  version: \"0.1.0\"\n" +
+		"# Optional: structured requirements for automated diagnostics.\n" +
+		"# requires:\n" +
+		"#   bins:\n" +
+		"#     - TODO-command\n" +
+		"#   env:\n" +
+		"#     - TODO_ENV_VAR\n" +
+		"#   skills:\n" +
+		"#     - github:owner/repo@required-skill\n" +
+		"#   platforms:\n" +
+		"#     os:\n" +
+		"#       - linux\n" +
+		"#       - darwin\n" +
 		"---\n" +
 		"# " + name + "\n" +
 		"\n" +

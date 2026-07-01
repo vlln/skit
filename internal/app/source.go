@@ -35,8 +35,7 @@ func sourceSubpath(src source.Source, skillRoot, workRoot string) string {
 
 func parseOptionsForSource(src source.Source) skill.ParseOptions {
 	opts := skill.ParseOptions{
-		AllowNameMismatch: isGitProvider(src.Type),
-		IncludeInternal:   true,
+		IncludeInternal: true,
 	}
 	if isGitProvider(src.Type) && src.Subpath == "" {
 		parts := strings.Split(src.Locator, "/")
