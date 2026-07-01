@@ -28,7 +28,7 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 			}
 			return nil, nil, err
 		}
-		if s.Internal && !opts.IncludeInternal {
+		if isInternal(s) && !opts.IncludeInternal {
 			return nil, append(s.Warnings, internalSkipWarning(s.Name, abs)), nil
 		}
 		if !opts.FullDepth {
@@ -55,7 +55,7 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 			}
 			return nil, warnings, err
 		}
-		if s.Internal && !opts.IncludeInternal {
+		if isInternal(s) && !opts.IncludeInternal {
 			warnings = append(warnings, internalSkipWarning(s.Name, candidate))
 			continue
 		}
@@ -87,7 +87,7 @@ func DiscoverWithOptions(root string, opts ParseOptions) ([]Skill, []string, err
 				}
 				return nil, warnings, err
 			}
-			if s.Internal && !opts.IncludeInternal {
+			if isInternal(s) && !opts.IncludeInternal {
 				warnings = append(warnings, internalSkipWarning(s.Name, candidate))
 				continue
 			}

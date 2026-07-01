@@ -4,30 +4,59 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/vlln/skit/internal/metadata"
 )
 
-var namePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-
+// ValidName checks whether name conforms to the naming rules:
+// 1-64 characters, Unicode lowercase letters/digits/hyphens, no leading/trailing
+// or consecutive hyphens. Callers should NFKC-normalize the name first.
 func ValidName(name string) bool {
-	return len(name) > 0 && len(name) <= 64 && namePattern.MatchString(name)
+	if len(name) == 0 || len(name) > 64 {
+		return false
+	}
+	if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
+		return false
+	}
+	if strings.Contains(name, "--") {
+		return false
+	}
+	for _, r := range name {
+		if unicode.IsDigit(r) || r == '-' {
+			continue
+		}
+		if unicode.IsLetter(r) {
+			if unicode.IsUpper(r) {
+				return false
+			}
+			continue
+		}
+		return false
+	}
+	return true
 }
 
+// NormalizeName applies NFKC normalization.
+func NormalizeName(name string) string {
+	return norm.NFKC.String(name)
+}
+
+// Skill holds the fields skit cares about. All fields except Root and File
+// are optional. Frontmatter preserves the complete raw YAML for pass-through.
 type Skill struct {
-	Root          string
-	File          string
-	Name          string
-	Description   string
-	License       string
-	Compatibility string
-	AllowedTools  string
-	Internal      bool
-	Frontmatter   metadata.YAMLMap
-	Skit          metadata.Skit
-	Warnings      []string
+	Root        string            // absolute path to skill directory
+	File        string            // path to SKILL.md (or skill.md)
+	Name        string            // defaults to directory basename
+	Description string            // recommended
+	License     string            // optional
+	Metadata    map[string]string // optional annotations (author, version, ...)
+	Requires    metadata.Requires // structured runtime requirements
+	Frontmatter metadata.YAMLMap  // complete raw frontmatter
+	Warnings    []string
 }
 
 func ParseDir(root string) (Skill, error) {
@@ -35,13 +64,10 @@ func ParseDir(root string) (Skill, error) {
 }
 
 type ParseOptions struct {
-	// Kept for callers that still distinguish ecosystem sources. Name mismatches
-	// are always warnings in v1.
-	AllowNameMismatch bool
-	ExpectedBasename  string
-	IncludeInternal   bool
-	FullDepth         bool
-	IgnoreInvalid     bool
+	ExpectedBasename string
+	IncludeInternal  bool
+	FullDepth        bool
+	IgnoreInvalid    bool
 }
 
 func ParseDirWithOptions(root string, opts ParseOptions) (Skill, error) {
@@ -69,21 +95,17 @@ func ParseDirWithOptions(root string, opts ParseOptions) (Skill, error) {
 	}
 	fm, err := metadata.ParseYAML(fmText)
 	if err != nil {
-		return out, fmt.Errorf("parse frontmatter: %w", err)
+		fm2, err2 := metadata.ParseYAMLLenient(fmText)
+		if err2 != nil {
+			return out, fmt.Errorf("parse frontmatter: %w", err)
+		}
+		fm = fm2
+		out.Warnings = append(out.Warnings, "frontmatter YAML was repaired (e.g. unquoted colons)")
 	}
 	out.Frontmatter = fm
-	if err := decodeStandard(&out, opts); err != nil {
-		return out, err
-	}
 
-	manifest, hasManifest, err := readManifest(abs)
-	if err != nil {
-		return out, err
-	}
-	out.Skit, err = metadata.FromCarriers(fm, manifest, hasManifest)
-	if err != nil {
-		return out, err
-	}
+	decodeStandard(&out, opts)
+	out.Requires = metadata.FromCarriers(fm).Requires
 	return out, nil
 }
 
@@ -124,66 +146,93 @@ func splitFrontmatter(src string) (string, string, error) {
 	return "", "", fmt.Errorf("frontmatter closing delimiter not found")
 }
 
-func decodeStandard(s *Skill, opts ParseOptions) error {
-	name, ok := metadata.AsString(s.Frontmatter["name"])
-	if !ok || name == "" {
-		return fmt.Errorf("name is required")
-	}
-	description, ok := metadata.AsString(s.Frontmatter["description"])
-	if !ok || description == "" {
-		return fmt.Errorf("description is required")
-	}
-	if !ValidName(name) {
-		return fmt.Errorf("invalid skill name %q", name)
-	}
+// decodeStandard extracts the fields skit cares about. All are optional.
+// Warnings are emitted only for quality issues that may indicate mistakes.
+func decodeStandard(s *Skill, opts ParseOptions) {
 	basename := filepath.Base(s.Root)
 	if opts.ExpectedBasename != "" {
 		basename = opts.ExpectedBasename
 	}
-	if name != basename {
-		s.Warnings = append(s.Warnings, fmt.Sprintf("skill name %q does not match directory basename %q", name, basename))
+
+	// name — optional, defaults to directory name
+	if name, ok := metadata.AsString(s.Frontmatter["name"]); ok && name != "" {
+		s.Name = NormalizeName(name)
+	} else {
+		s.Name = basename
 	}
-	if len(description) > 1024 {
-		return fmt.Errorf("description must be at most 1024 characters")
+	if !ValidName(s.Name) {
+		s.Warnings = append(s.Warnings, fmt.Sprintf(
+			"name %q is invalid (must be 1-64 lowercase letters/digits/hyphens, no leading/trailing/consecutive hyphens)", s.Name))
 	}
-	if compatibility, ok := metadata.AsString(s.Frontmatter["compatibility"]); ok {
-		if compatibility == "" || len(compatibility) > 500 {
-			return fmt.Errorf("compatibility must be 1-500 characters when present")
+	if s.Name != basename {
+		s.Warnings = append(s.Warnings, fmt.Sprintf(
+			"name %q does not match directory basename %q", s.Name, basename))
+	}
+
+	// description — optional
+	if desc, ok := metadata.AsString(s.Frontmatter["description"]); ok {
+		s.Description = desc
+		if len(desc) > 1024 {
+			s.Warnings = append(s.Warnings, fmt.Sprintf("description exceeds 1024 characters (%d)", len(desc)))
 		}
-		s.Compatibility = compatibility
 	}
+
+	// license — optional
+	if v, ok := metadata.AsString(s.Frontmatter["license"]); ok {
+		s.License = v
+	}
+
+	// metadata — optional, map[string]string
 	if meta, ok := s.Frontmatter["metadata"]; ok {
-		metaMap, ok := metadata.AsMap(meta)
-		if !ok {
-			return fmt.Errorf("metadata must be a mapping")
-		}
-		if internal, ok := metaMap["internal"].(bool); ok {
-			s.Internal = internal
-		}
+		s.Metadata = toStringMap(meta)
 	}
-	if allowedTools, ok := metadata.AsString(s.Frontmatter["allowed-tools"]); ok {
-		s.AllowedTools = allowedTools
-	}
-	s.Name = name
-	s.Description = description
-	s.License, _ = metadata.AsString(s.Frontmatter["license"])
-	return nil
 }
 
-func readManifest(root string) (metadata.YAMLMap, bool, error) {
-	path := filepath.Join(root, "skill.yaml")
-	if !exists(path) {
-		return nil, false, nil
+// toStringMap converts a frontmatter value to map[string]string.
+func toStringMap(v any) map[string]string {
+	switch t := v.(type) {
+	case metadata.YAMLMap:
+		out := make(map[string]string, len(t))
+		for k, val := range t {
+			out[k] = fmt.Sprint(val)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]string, len(t))
+		for k, val := range t {
+			out[k] = fmt.Sprint(val)
+		}
+		return out
+	default:
+		return nil
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false, err
+}
+
+// ValidateSkill performs strict validation for publish/validate workflows.
+func ValidateSkill(s Skill) []string {
+	var errs []string
+
+	if s.Name == "" {
+		errs = append(errs, "name is required")
+	} else if !ValidName(s.Name) {
+		errs = append(errs, fmt.Sprintf("invalid name %q", s.Name))
 	}
-	m, err := metadata.ParseYAML(string(raw))
-	if err != nil {
-		return nil, false, fmt.Errorf("parse skill.yaml: %w", err)
+
+	basename := filepath.Base(s.Root)
+	if s.Name != "" && s.Name != basename {
+		errs = append(errs, fmt.Sprintf("name %q must match directory name %q", s.Name, basename))
 	}
-	return m, true, nil
+
+	if s.Description == "" {
+		errs = append(errs, "description is recommended")
+	}
+
+	return errs
+}
+
+// isInternal checks whether the skill is marked as internal via metadata.
+func isInternal(s Skill) bool {
+	return s.Metadata["internal"] == "true"
 }
 
 func exists(path string) bool {
