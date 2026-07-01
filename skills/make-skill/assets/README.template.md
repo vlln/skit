@@ -23,13 +23,13 @@
 ### [skit](https://github.com/vlln/skit) (Recommended)
 
 ```bash
-skit install ./<repo-name> --all
+skit install https://github.com/<owner>/<repo>/tree/main/skills/<skill-name>
 ```
 
-### [skills](https://github.com/bananaml/skills)
+### [skill.sh](https://github.com/vercel-labs/skills)
 
 ```bash
-npx skills add git@github.com:<owner>/<repo>.git
+npx skills add <owner>/<repo>
 ```
 
 ### Manually

@@ -150,13 +150,13 @@ func readmeTemplate(repoName, skillName string) string {
 		"### [skit](https://github.com/vlln/skit) (Recommended)\n" +
 		"\n" +
 		"```bash\n" +
-		"skit install ./" + repoName + " --all\n" +
+		"skit install https://github.com/<owner>/<repo>/tree/main/skills/" + skillName + "\n" +
 		"```\n" +
 		"\n" +
-		"### [skills](https://github.com/bananaml/skills)\n" +
+		"### [skill.sh](https://github.com/vercel-labs/skills)\n" +
 		"\n" +
 		"```bash\n" +
-		"npx skills add git@github.com:<owner>/<repo>.git\n" +
+		"npx skills add <owner>/<repo>\n" +
 		"```\n" +
 		"\n" +
 		"### Manually\n" +
