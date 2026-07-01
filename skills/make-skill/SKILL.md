@@ -2,18 +2,13 @@
 name: make-skill
 description: Create or revise Agent Skills repositories with one or more skills under skills/, precise SKILL.md frontmatter, concise instructions, validation checks, and skit-friendly metadata.
 license: MIT
-compatibility: Agent Skills SKILL.md format; optimized for skit-managed skill repositories.
 metadata:
-  skit:
-    version: 0.1.0
-    requires:
-      bins:
-        - skit
-    keywords:
-      - skill-authoring
-      - agent-skills
+  author: vlln
+  version: "0.1.0"
+requires:
+  bins:
+    - skit
 ---
-
 # Make Skill
 
 Use this skill to create or improve an Agent Skills repository. Produce a small,
@@ -27,7 +22,7 @@ Prefer short command-like skill names:
 - lowercase letters, numbers, and hyphens only
 - 1-64 characters
 - no leading, trailing, or repeated hyphens
-- each skill directory name must match its `name`
+- each skill directory name should match its `name`
 
 Use `make-skill` for this skill. It is short, imperative, and Unix-like.
 
@@ -62,37 +57,32 @@ Start from this template and remove fields that do not apply:
 name: skill-name
 description: [One concise sentence describing the skill's specific capability and the situations where it is useful.]
 license: MIT
-compatibility: Requires [specific tools, product, network, platform, or runtime]. Omit this field if there are no special requirements.
 metadata:
-  skit:
-    version: 0.1.0
-    requires:
-      bins:
-        - tool-name
-      env:
-        - REQUIRED_ENV_VAR
-      skills:
-        - github:owner/repo@required-skill
-      platforms:
-        os:
-          - linux
-          - darwin
-    keywords:
-      - keyword
-      - domain
+  author: your-name
+  version: "0.1.0"
+requires:
+  bins:
+    - tool-name
+  env:
+    - REQUIRED_ENV_VAR
+  skills:
+    - github:owner/repo@required-skill
+  platforms:
+    os:
+      - linux
+      - darwin
 ---
 ```
 
 Rules:
 
-- `name` and `description` are required.
+- `name` and `description` are recommended but not required.
 - Keep `description` under 1024 characters.
 - Write `description` as a concise capability summary with enough context for
   an agent to decide when the skill is relevant.
 - Include `license` when the skill is intended to be shared.
-- Include `compatibility` only for real requirements.
-- Use `metadata.skit.requires` only for requirements the agent can diagnose.
-- Use `metadata.skit.requires.skills` for required Skills, written as complete
+- Use `requires` only for requirements the agent can diagnose.
+- Use `requires.skills` for required Skills, written as complete
   skit install targets such as `github:owner/repo@skill-name`.
 - Do not invent dependencies, tools, environment variables, or platforms.
 
