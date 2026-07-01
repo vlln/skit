@@ -165,14 +165,75 @@ mechanics there, such as when the agent should read `references/`, how helper
 scripts are invoked, or detailed implementation rules. Put that operational
 guidance in the relevant `SKILL.md`.
 
-Do not duplicate large README template content inside this skill. If the
-repository README needs install or quick-start wording changes, update the
-generated README directly or the init template in skit. This skill should
-describe the workflow and validation rules, not carry a second copy of the
-template.
-
 Do not add a README inside an individual skill directory unless the user asks
 for one or the skill needs human-facing package documentation.
+
+### README Template
+
+Start from this template and remove sections that do not apply:
+
+```markdown
+<h1 align="center"><skill-title></h1>
+
+<p align="center">
+  <strong>One-line value proposition.</strong><br/>
+  Two to three lines describing what the skills do, the target audience,
+  and the key benefit.
+</p>
+
+<p align="center">
+  <a href="https://github.com/<owner>/<repo>/stargazers"><img src="https://badgen.net/github/stars/<owner>/<repo>?label=%E2%98%85" alt="GitHub stars" /></a>
+  <img src="https://badgen.net/badge/license/<license>/blue" alt="<license>" />
+  <img src="https://badgen.net/badge/spec/Agent%20Skills/8257D0" alt="Agent Skills spec" />
+</p>
+
+<p align="center">
+  <sub><a href="README.md">English</a> · <a href="docs/readme/README.zh-CN.md">中文</a></sub>
+</p>
+
+---
+
+## Installation
+
+### [skit](https://github.com/vlln/skit) (Recommended)
+
+```bash
+skit install ./<repo-name> --all
+```
+
+### [skills](https://github.com/bananaml/skills)
+
+```bash
+npx skills add git@github.com:<owner>/<repo>.git
+```
+
+### Manually
+
+| Agent | Command |
+|-------|---------|
+| **Claude Code** | `cp -r skills/<skill-name> .claude/skills/` |
+| **Codex** | `cp -r skills/<skill-name> ~/.codex/skills/` |
+| **OpenCode** | `git clone https://github.com/<owner>/<repo>.git ~/.opencode/skills/<repo-name>` |
+| **Kimi** | `cp -r skills/<skill-name> ~/.kimi/skills/` |
+
+---
+
+## Skills
+
+| Skill | Description |
+|-------|-------------|
+| [<skill-name>](skills/<skill-name>/SKILL.md) | One-line description. |
+```
+
+### README Rules
+
+- Replace all `<placeholders>` with real values.
+- Remove badges that do not apply (e.g. language-specific, zero-deps).
+- Remove language links if only one language is provided.
+- Keep only the install methods that actually work for this repository.
+- List every public skill in the `Skills` table.
+- Do not add a `Skills` table if there is only one skill; use the header
+  description instead.
 
 ## Validation Checklist
 
