@@ -1,6 +1,7 @@
 ---
 name: search-skills
 description: Find, evaluate, and install agent skills with the skit CLI. Use when the user asks to find a skill, search installable skills, add a capability, install a skill, list installed skills, update skills, remove skills, or check active links.
+license: MIT
 metadata:
   author: vlln
   version: "0.1.0"
