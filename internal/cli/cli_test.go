@@ -154,7 +154,7 @@ func TestListAllCLI(t *testing.T) {
 	if code := Run([]string{"list", "--all"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("list --all code = %d stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "external\nexternal-skill  ") {
+	if !strings.Contains(stdout.String(), "external\n") || !strings.Contains(stdout.String(), "external-skill") {
 		t.Fatalf("list --all stdout = %q", stdout.String())
 	}
 }

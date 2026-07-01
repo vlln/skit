@@ -551,6 +551,7 @@ func printSources(stdout io.Writer, sources []app.SearchSource) {
 		return
 	}
 	var rows [][]string
+	rows = append(rows, []string{"NAME", "TYPE", "URL"})
 	for _, source := range sources {
 		locator := source.Source
 		if locator == "" {
@@ -858,8 +859,9 @@ func runList(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	var rows [][]string
+	rows = append(rows, []string{"NAME", "STATUS", "DESCRIPTION"})
 	for _, entry := range entries {
-		rows = append(rows, []string{entry.Name, listState(entry), entry.Description})
+		rows = append(rows, []string{entry.Name, listState(entry), truncate(entry.Description, 80)})
 	}
 	writeTable(stdout, rows)
 	return 0
@@ -872,10 +874,11 @@ func printListAll(stdout io.Writer, entries []app.ListEntry) {
 		if !entry.Managed {
 			continue
 		}
-		managedRows = append(managedRows, []string{entry.Name, listState(entry), entry.Description})
+		managedRows = append(managedRows, []string{entry.Name, listState(entry), truncate(entry.Description, 80)})
 	}
 	if len(managedRows) > 0 {
 		fmt.Fprintln(stdout, "managed")
+		managedRows = append([][]string{{"NAME", "STATUS", "DESCRIPTION"}}, managedRows...)
 		writeTable(stdout, managedRows)
 		printedManaged = true
 	}
@@ -884,13 +887,14 @@ func printListAll(stdout io.Writer, entries []app.ListEntry) {
 		if entry.Managed {
 			continue
 		}
-		externalRows = append(externalRows, []string{entry.Name, entry.Path, entry.Description})
+		externalRows = append(externalRows, []string{entry.Name, entry.Path, truncate(entry.Description, 80)})
 	}
 	if len(externalRows) > 0 {
 		if printedManaged {
 			fmt.Fprintln(stdout)
 		}
 		fmt.Fprintln(stdout, "external")
+		externalRows = append([][]string{{"NAME", "PATH", "DESCRIPTION"}}, externalRows...)
 		writeTable(stdout, externalRows)
 	}
 }
@@ -921,6 +925,13 @@ func writeTable(stdout io.Writer, rows [][]string) {
 		fmt.Fprintln(tw)
 	}
 	_ = tw.Flush()
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
 
 func maxInt(a, b int) int {
