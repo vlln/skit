@@ -83,29 +83,52 @@ func skillNameFromRepo(name string) string {
 
 func skillTemplate(name string) string {
 	return "---\n" +
+		"# Required ──────────────────────────────────────────\n" +
 		"name: " + name + "\n" +
-		"description: \"TODO: describe " + name + ".\"\n" +
-		"# Optional: uncomment fields that apply.\n" +
-		"# license: MIT\n" +
-		"# when-to-use: \"TODO: additional trigger context.\"\n" +
+		"description: >\n" +
+		"  TODO: describe " + name + ".\n" +
+		"\n" +
+		"# Optional: discovery & activation ─────────────────\n" +
+		"# when-to-use: >\n" +
+		"#   TODO: additional trigger context.\n" +
 		"# allowed-tools:\n" +
 		"#   - Bash(git:*)\n" +
 		"#   - Read\n" +
+		"# disallowed-tools:\n" +
+		"#   - AskUserQuestion\n" +
+		"# argument-hint: <file> [format]\n" +
+		"# arguments:\n" +
+		"#   - file\n" +
+		"#   - format\n" +
+		"# disable-model-invocation: false\n" +
+		"# user-invocable: true\n" +
+		"\n" +
+		"# Optional: metadata ────────────────────────────────\n" +
+		"license: MIT\n" +
 		"metadata:\n" +
 		"  author: TODO\n" +
 		"  version: \"0.1.0\"\n" +
-		"# Optional: structured requirements for automated diagnostics.\n" +
+		"\n" +
+		"# Optional: skit requirements ───────────────────────\n" +
 		"# requires:\n" +
 		"#   bins:\n" +
 		"#     - TODO-command\n" +
+		"#   any-bins:\n" +
+		"#     - pdftotext\n" +
+		"#     - mutool\n" +
 		"#   env:\n" +
 		"#     - TODO_ENV_VAR\n" +
+		"#   config:\n" +
+		"#     - ~/.config/tool\n" +
 		"#   skills:\n" +
 		"#     - github:owner/repo@required-skill\n" +
 		"#   platforms:\n" +
 		"#     os:\n" +
 		"#       - linux\n" +
 		"#       - darwin\n" +
+		"#     arch:\n" +
+		"#       - amd64\n" +
+		"#       - arm64\n" +
 		"---\n" +
 		"# " + name + "\n" +
 		"\n" +

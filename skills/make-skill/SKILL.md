@@ -54,36 +54,65 @@ Start from this template and remove fields that do not apply:
 
 ```yaml
 ---
-name: skill-name
-description: [One concise sentence describing the skill's specific capability and the situations where it is useful.]
-license: MIT
-metadata:
+# Required ──────────────────────────────────────────
+name: skill-name          # 1-64 lowercase letters/digits/hyphens, no leading/trailing/consecutive hyphen
+description: >            # recommended: one concise sentence describing capability and when to use
+  TODO: describe the skill's purpose and situations where an agent should use it.
+
+# Optional: discovery & activation ─────────────────
+# when-to-use: >          # additional trigger context (appended to description, shared 1536-char limit)
+#   TODO: extra situations.
+# allowed-tools:           # tools pre-approved while skill is active (YAML list or space-separated string)
+#   - Bash(git:*)
+#   - Read
+# disallowed-tools:        # tools removed from the pool while skill is active
+#   - AskUserQuestion
+# argument-hint: <file> [format]   # auto-complete hint for expected arguments
+# arguments:               # named positional args for $name substitution in body
+#   - file
+#   - format
+# disable-model-invocation: false   # set true to prevent automatic loading (manual /name only)
+# user-invocable: true     # set false to hide from the / menu
+
+# Optional: metadata ────────────────────────────────
+license: MIT              # SPDX identifier or reference to bundled license file
+metadata:                 # arbitrary string→string annotations
   author: your-name
   version: "0.1.0"
-requires:
-  bins:
-    - tool-name
-  env:
-    - REQUIRED_ENV_VAR
-  skills:
-    - github:owner/repo@required-skill
-  platforms:
-    os:
-      - linux
-      - darwin
+
+# Optional: skit requirements ───────────────────────
+# requires:               # structured runtime requirements for automated diagnostics
+#   bins:                 # all must be present
+#     - tool-name
+#   any-bins:             # at least one must be present
+#     - pdftotext
+#     - mutool
+#   env:                  # environment variables that must be set
+#     - REQUIRED_ENV_VAR
+#   config:               # config file paths that must exist
+#     - ~/.config/tool
+#   skills:               # dependent skills (skit install targets)
+#     - github:owner/repo@required-skill
+#   platforms:            # supported platforms
+#     os:
+#       - linux
+#       - darwin
+#     arch:
+#       - amd64
+#       - arm64
 ---
 ```
 
 Rules:
 
-- `name` and `description` are recommended but not required.
-- Keep `description` under 1024 characters.
-- Write `description` as a concise capability summary with enough context for
-  an agent to decide when the skill is relevant.
+- `name` is recommended but not required; defaults to directory basename.
+- `description` is recommended; keep it under 1024 characters.
+- `when-to-use` + `description` are combined and truncated to 1536 characters.
+- `allowed-tools` / `disallowed-tools` accept a YAML list or space-separated string.
 - Include `license` when the skill is intended to be shared.
 - Use `requires` only for requirements the agent can diagnose.
-- Use `requires.skills` for required Skills, written as complete
-  skit install targets such as `github:owner/repo@skill-name`.
+- Use `requires.skills` for dependent skills, written as complete skit install
+  targets such as `github:owner/repo@skill-name`.
 - Do not invent dependencies, tools, environment variables, or platforms.
 
 ## Body Structure
