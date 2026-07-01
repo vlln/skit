@@ -113,6 +113,23 @@ skit search "code review"
 skit search review --source github:owner/skills
 ```
 
+Add a curated manifest as a named source for search and install:
+
+```sh
+skit source add skills-source https://raw.githubusercontent.com/vlln/skills-source/main/skit.json
+skit search "pdf" --source skills-source
+skit install skills-source/mineru-api
+```
+
+Manage sources:
+
+```sh
+skit source              # list sources
+skit source remove <name>
+skit source enable <name>
+skit source disable <name>
+```
+
 Create a Skill repository:
 
 ```sh
@@ -256,6 +273,8 @@ The command surface is intentionally small.
 | `skit remove <name>` | Remove from manifest, active link, and local store. |
 | `skit check` | Validate manifest entries and active links. |
 | `skit export [path]` | Write a shareable manifest, default `./skit.json`. |
+| `skit source add [name] <url>` | Register a manifest URL as a named search source. |
+| `skit source` | List registered sources; remove, enable, disable. |
 | `skit init <name>` | Create a Skill repository skeleton. |
 
 Useful flags:
