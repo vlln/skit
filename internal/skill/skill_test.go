@@ -28,6 +28,12 @@ func TestParseDirLowercaseWarning(t *testing.T) {
 }
 
 func TestParseDirCanonicalWins(t *testing.T) {
+	// On case-insensitive filesystems (e.g. macOS default), both SKILL.md and
+	// skill.md cannot coexist in the working tree, so this test data is
+	// unusable.
+	if isCaseInsensitiveFS(t) {
+		t.Skip("case-insensitive filesystem: SKILL.md and skill.md cannot coexist")
+	}
 	s, err := ParseDir("../../testdata/skills/both")
 	if err != nil {
 		t.Fatal(err)
@@ -38,6 +44,17 @@ func TestParseDirCanonicalWins(t *testing.T) {
 	if len(s.Warnings) != 1 {
 		t.Fatalf("warnings = %#v, want one warning", s.Warnings)
 	}
+}
+
+func isCaseInsensitiveFS(t *testing.T) bool {
+	t.Helper()
+	dir := t.TempDir()
+	upper := filepath.Join(dir, "TEST")
+	if err := os.WriteFile(upper, []byte("x"), 0644); err != nil {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(dir, "test"))
+	return err == nil
 }
 
 func TestParseDirWarnsNameMismatch(t *testing.T) {

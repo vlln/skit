@@ -114,6 +114,25 @@ func markerFile(root string) (string, []string, error) {
 	lower := filepath.Join(root, "skill.md")
 	upperExists := exists(upper)
 	lowerExists := exists(lower)
+	// On case-insensitive filesystems (e.g. macOS default), os.Stat("skill.md")
+	// matches "SKILL.md", so we must verify via a directory listing that both
+	// names actually exist as separate entries.
+	if upperExists && lowerExists {
+		entries, readErr := os.ReadDir(root)
+		if readErr == nil {
+			hasUpper, hasLower := false, false
+			for _, e := range entries {
+				switch e.Name() {
+				case "SKILL.md":
+					hasUpper = true
+				case "skill.md":
+					hasLower = true
+				}
+			}
+			upperExists = hasUpper
+			lowerExists = hasLower
+		}
+	}
 	switch {
 	case upperExists:
 		var warnings []string

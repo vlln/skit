@@ -51,7 +51,7 @@ func Add(req AddRequest) (AddResult, error) {
 	if req.Skill != "" {
 		wanted = append([]string{req.Skill}, wanted...)
 	}
-	if src.Skill != "" && len(wanted) > 0 {
+	if src.Skill != "" && len(wanted) > 0 && !containsSkill(wanted, src.Skill) {
 		result.Warnings = append(result.Warnings, "inline skill selector ignored because --skill was provided")
 	}
 	if src.Skill != "" && len(wanted) == 0 {
@@ -292,4 +292,13 @@ func selectSkills(skills []skill.Skill, wanted []string, all bool) ([]skill.Skil
 		return nil, fmt.Errorf("no skills found")
 	}
 	return nil, fmt.Errorf("source contains multiple skills; use source@skill, --skill <name...>, or --all")
+}
+
+func containsSkill(skills []string, name string) bool {
+	for _, s := range skills {
+		if s == name {
+			return true
+		}
+	}
+	return false
 }
