@@ -81,6 +81,20 @@ Do not over-decouple: if the content fits in one `SKILL.md`, keep it there.
 Split to `references/` only when the skill would exceed 500 lines or when the
 detail is genuinely secondary.
 
+## Path Referencing Convention
+
+When referring to files inside the skill directory (e.g., scripts, assets, references), use the placeholder `$_S` to denote the absolute path of the skill root directory.
+
+- `$_S` is not a shell variable that exists by default. It is a convention used in SKILL.md to unambiguously indicate "the skill’s own directory".
+- In actual execution, the agent must replace `$_S` with the real absolute path before running commands. For example:
+  ```bash
+  export _S="/absolute/path/to/skill"; $_S/scripts/run.sh
+  ```
+  Here, `_S` (without `$`) is the actual environment variable name; `$_S` in documentation is the placeholder notation.
+- Do not use bare relative paths such as `scripts/run.sh` or `./assets/config.yaml`, because the agent may resolve them relative to its current working directory, not the skill directory.
+
+This convention ensures that instructions in SKILL.md are unambiguous and reproducible across different invocation contexts.
+
 ## Frontmatter
 
 Start from this template and remove fields that do not apply. For a minimal
@@ -246,8 +260,8 @@ dependencies or validation gates.
    structure or public skill list.
 3. Create the repository skeleton. Prefer `skit init <name>` if available.
    If `skit` is not installed, create manually:
-   - `<name>-skill/README.md` from `assets/README.template.md`
-   - `<name>-skill/skills/<name>/SKILL.md` from the frontmatter template above
+   - $_S/README.md from `assets/README.template.md`
+   - $_S/skills/<name>/SKILL.md from the frontmatter template above
 4. Work inside the repository and revise the initial skill instead of
    recreating the directory layout by hand.
 5. Split the domain into focused skills. Do not force everything into a single
