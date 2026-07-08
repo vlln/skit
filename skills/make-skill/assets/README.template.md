@@ -49,6 +49,20 @@ npx skills add <owner>/<repo>
 |-------|-------------|
 | [<skill-name>](skills/<skill-name>/SKILL.md) | One-line description. |
 
+## Usage
+
+<!--
+  When the skill includes executable scripts, document them here.
+  Use the placeholder $_S to denote the skill root directory.
+  For example:
+    ```bash
+    export _S="/path/to/this/skill"
+    $_S/scripts/validate.sh input.json
+    $_S/scripts/generate.sh --template $_S/assets/main.tmpl
+    ```
+  Remove this section if the skill has no internal files to reference.
+-->
+
 ## Requirements
 
 <runtime, tool, account, or platform requirements. Remove this section if none.>
