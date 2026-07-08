@@ -30,14 +30,18 @@ context. Do not let development context leak into `SKILL.md`.
 
 ### Abstraction over Implementation
 
-`SKILL.md` declares **intent and capability**, not how it is done. The agent
-reading the skill needs to know what and when, not the implementation path.
+`SKILL.md` declares **intent and capability**, not how standard operations are
+implemented. The agent already knows how to write YAML, structure markdown, or
+split concerns across files — don't explain those.
 
-- Declaration (SKILL.md): "Extract text and tables from PDF files."
-- Implementation (scripts/, references/): "Run `scripts/parse.py`."
+**Proprietary scripts and tools are different.** Scripts bundled in the skill
+are not in the LLM's pretraining data. The agent cannot discover them by
+reasoning from general knowledge. For these, describe what they do, their
+arguments, and when to use them:
 
-If the skill body says "use `scripts/foo.py` to do X", it breaks when the
-script is renamed. Instead say "do X" and let the agent discover the script.
+- Standard operation: "Create a SKILL.md with proper frontmatter and body."
+- Proprietary script: "Run `skit init <name>` to scaffold a new skill
+  repository with the correct directory layout and template files."
 
 ### Write Only What the LLM Does Not Know
 
@@ -62,8 +66,7 @@ Provide **defaults, not menus**. When multiple tools could work, pick one and
 mention alternatives briefly — don't present them as equal options.
 
 Favor **procedures over declarations**. Teach the agent *how to approach* a
-class of problems, not *what to produce* for a specific instance. The approach
-should generalize even when individual details are specific.
+class of problems, not *what to produce* for a specific instance.
 
 ### Progressive Disclosure
 
@@ -268,12 +271,6 @@ Before finishing, check:
 - Every `description` clearly identifies the skill's purpose and when to use it.
 - Required tools/env/platforms are real and minimal.
 - Every `SKILL.md` is under 500 lines.
-- Each skill body is procedural, concise, and domain-specific.
-- No development context, design rationale, or repository self-reference has
-  leaked into any `SKILL.md`.
-- `SKILL.md` describes intent and capability, not implementation paths.
-- `README.md` is human-facing and does not describe agent-internal mechanics.
 - Any examples are runnable or clearly marked as templates.
-- No generic filler.
 - If `skit` is available: `skit install ./<repo-name> --all` and `skit check`
   succeed in a disposable test environment.
