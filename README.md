@@ -77,6 +77,13 @@ Install macOS/Linux with the project installer:
 curl -fsSL https://raw.githubusercontent.com/vlln/skit/main/install.sh | sh
 ```
 
+By default the binary is placed in `$HOME/.local/bin`. Set `SKIT_BINDIR` to install
+elsewhere:
+
+```sh
+SKIT_BINDIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/vlln/skit/main/install.sh | sh
+```
+
 Package-manager distribution can layer on the same release artifacts:
 
 ```sh
@@ -283,6 +290,7 @@ Useful flags:
 --skill <names...> Select Skills from one source
 --name <name>      Install one Skill under a local name
 --all              Install all Skills from a source; with list, scan external dirs
+--dir <path>       Download-only: copy skills to path, skip manifest and symlinks
 --full-depth       Search recursively during source discovery
 --force            Replace an existing non-symlink active path
 --keep             Remove manifest/link state but keep the local copy

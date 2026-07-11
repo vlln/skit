@@ -3,7 +3,7 @@ set -eu
 
 repo="${SKIT_REPO:-vlln/skit}"
 version="${SKIT_VERSION:-latest}"
-install_dir="${SKIT_INSTALL_DIR:-$HOME/.local/bin}"
+install_dir="${SKIT_BINDIR:-$HOME/.local/bin}"
 connect_timeout="${SKIT_CONNECT_TIMEOUT:-10}"
 max_time="${SKIT_MAX_TIME:-300}"
 speed_limit="${SKIT_SPEED_LIMIT:-1024}"
