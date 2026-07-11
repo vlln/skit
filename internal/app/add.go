@@ -25,6 +25,10 @@ type AddRequest struct {
 	Force     bool
 	Progress  func(string)
 
+	// InstallDir is a download-only target. When set, skills are copied
+	// into this directory and no manifest or symlinks are created.
+	InstallDir string
+
 	// Deprecated pre-1.0 flags.
 	IgnoreDeps bool
 	NoActive   bool
@@ -106,6 +110,10 @@ func Add(req AddRequest) (AddResult, error) {
 	}
 	if req.Name != "" && len(selected) != 1 {
 		return result, fmt.Errorf("--name can only be used when installing exactly one skill")
+	}
+
+	if req.InstallDir != "" {
+		return addToDir(req.InstallDir, selected, req.Name, src, workRoot, progress, result)
 	}
 
 	manifest, err := readManifest()
@@ -196,6 +204,10 @@ type AddFromNamedSourceRequest struct {
 	Agents     []string
 	Force      bool
 	Progress   func(string)
+
+	// InstallDir is a download-only target. When set, skills are copied
+	// into this directory and no manifest or symlinks are created.
+	InstallDir string
 }
 
 func AddFromNamedSource(req AddFromNamedSourceRequest) (AddResult, error) {
@@ -224,14 +236,15 @@ func AddFromNamedSource(req AddFromNamedSourceRequest) (AddResult, error) {
 	}
 
 	return Add(AddRequest{
-		Context:  context.Background(),
-		CWD:      req.CWD,
-		Scope:    req.Scope,
-		Source:   installSrc,
-		Name:     req.Name,
-		Agents:   req.Agents,
-		Force:    req.Force,
-		Progress: req.Progress,
+		Context:    context.Background(),
+		CWD:        req.CWD,
+		Scope:      req.Scope,
+		Source:     installSrc,
+		Name:       req.Name,
+		Agents:     req.Agents,
+		Force:      req.Force,
+		Progress:   req.Progress,
+		InstallDir: req.InstallDir,
 	})
 }
 
@@ -292,6 +305,39 @@ func selectSkills(skills []skill.Skill, wanted []string, all bool) ([]skill.Skil
 		return nil, fmt.Errorf("no skills found")
 	}
 	return nil, fmt.Errorf("source contains multiple skills; use source@skill, --skill <name...>, or --all")
+}
+
+func addToDir(targetDir string, selected []skill.Skill, customName string, src source.Source, workRoot string, progress func(string), result AddResult) (AddResult, error) {
+	for _, parsed := range selected {
+		name := parsed.Name
+		if customName != "" {
+			name = customName
+		}
+		var installDir string
+		if len(selected) == 1 {
+			installDir = targetDir
+		} else {
+			installDir = filepath.Join(targetDir, name)
+		}
+		progress("copy " + name)
+		if err := copySkillTree(parsed.Root, installDir); err != nil {
+			return result, err
+		}
+		result.Entries = append(result.Entries, ManifestSkill{
+			Name:        name,
+			Description: parsed.Description,
+			Source: ManifestSource{
+				Type:    string(src.Type),
+				Locator: src.Locator,
+				URL:     src.URL,
+				Ref:     src.Ref,
+				Subpath: sourceSubpath(src, parsed.Root, workRoot),
+				Skill:   parsed.Name,
+			},
+			Path: installDir,
+		})
+	}
+	return result, nil
 }
 
 func containsSkill(skills []string, name string) bool {

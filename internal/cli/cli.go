@@ -559,6 +559,14 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skit install:", err)
 		return 2
 	}
+	if opts.installDir != "" && len(opts.agents) > 0 {
+		fmt.Fprintln(stderr, "skit install: --dir and --agent are mutually exclusive")
+		return 2
+	}
+	if opts.installDir != "" && opts.dryRun {
+		fmt.Fprintln(stderr, "skit install: --dir and --dry-run are mutually exclusive")
+		return 2
+	}
 	if len(rest) == 0 {
 		defaultManifest := "skit.json"
 		if _, err := os.Stat(defaultManifest); err != nil {
@@ -573,6 +581,10 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(rest) > 1 && opts.name != "" {
 		fmt.Fprintln(stderr, "skit install: --name can only be used with one source")
+		return 2
+	}
+	if opts.installDir != "" && len(rest) == 1 && isManifestFile(rest[0]) {
+		fmt.Fprintln(stderr, "skit install: --dir cannot be used with manifest installs")
 		return 2
 	}
 	if len(rest) == 1 && opts.name == "" && len(opts.skills) == 0 && isManifestFile(rest[0]) {
@@ -610,25 +622,31 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 				Agents:     opts.agents,
 				Force:      opts.force,
 				Progress:   installProgress(stderr, opts.json),
+				InstallDir: opts.installDir,
 			})
 			if err != nil {
 				fmt.Fprintln(stderr, "skit install:", err)
 				return 1
 			}
-			printAddResult(stdout, stderr, result)
+			if opts.installDir != "" {
+				printInstallDirResult(stdout, stderr, result)
+			} else {
+				printAddResult(stdout, stderr, result)
+			}
 			continue
 		}
 		result, err := app.Add(app.AddRequest{
-			CWD:       cwd(),
-			Scope:     opts.scope,
-			Source:    src,
-			Name:      opts.name,
-			Skills:    opts.skills,
-			Agents:    opts.agents,
-			All:       opts.all,
-			FullDepth: opts.fullDepth,
-			Force:     opts.force,
-			Progress:  installProgress(stderr, opts.json),
+			CWD:        cwd(),
+			Scope:      opts.scope,
+			Source:     src,
+			Name:       opts.name,
+			Skills:     opts.skills,
+			Agents:     opts.agents,
+			All:        opts.all,
+			FullDepth:  opts.fullDepth,
+			Force:      opts.force,
+			Progress:   installProgress(stderr, opts.json),
+			InstallDir: opts.installDir,
 		})
 		if err != nil {
 			if canActivateInstalledFallback(src, opts, err) {
@@ -640,7 +658,11 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 					Force:  opts.force,
 				})
 				if activateErr == nil {
-					printAddResult(stdout, stderr, result)
+					if opts.installDir != "" {
+						printInstallDirResult(stdout, stderr, result)
+					} else {
+						printAddResult(stdout, stderr, result)
+					}
 					continue
 				}
 				if !strings.Contains(err.Error(), "unsupported source") || !strings.Contains(activateErr.Error(), "is not installed") {
@@ -650,7 +672,11 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "skit install:", err)
 			return 1
 		}
-		printAddResult(stdout, stderr, result)
+		if opts.installDir != "" {
+			printInstallDirResult(stdout, stderr, result)
+		} else {
+			printAddResult(stdout, stderr, result)
+		}
 	}
 	maybePrintUpdate(stderr)
 	return 0
@@ -736,6 +762,15 @@ func printAddResult(stdout, stderr io.Writer, result app.AddResult) {
 	}
 	for _, path := range result.ActivePaths {
 		fmt.Fprintf(stdout, "active %s\n", path)
+	}
+}
+
+func printInstallDirResult(stdout, stderr io.Writer, result app.AddResult) {
+	for _, entry := range result.Entries {
+		fmt.Fprintf(stdout, "installed %s\n", entry.Path)
+	}
+	for _, warning := range compactWarnings(result.Warnings) {
+		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}
 }
 
@@ -1120,17 +1155,18 @@ func writeJSON(stdout, stderr io.Writer, v any) int {
 }
 
 type commonOptions struct {
-	scope     app.Scope
-	skills    []string
-	agents    []string
-	source    string
-	name      string
-	all       bool
-	json      bool
-	fullDepth bool
-	force     bool
-	keep      bool
-	dryRun    bool
+	scope      app.Scope
+	skills     []string
+	agents     []string
+	source     string
+	name       string
+	all        bool
+	json       bool
+	fullDepth  bool
+	force      bool
+	keep       bool
+	dryRun     bool
+	installDir string
 }
 
 func parseCommon(args []string) (commonOptions, []string, error) {
@@ -1219,6 +1255,15 @@ func parseCommon(args []string) (commonOptions, []string, error) {
 			opts.keep = true
 		case "--dry-run":
 			opts.dryRun = true
+		case "--dir":
+			i++
+			if i >= len(args) {
+				return opts, nil, fmt.Errorf("%s requires a value", arg)
+			}
+			if opts.installDir != "" {
+				return opts, nil, fmt.Errorf("--dir may only be provided once")
+			}
+			opts.installDir = args[i]
 		default:
 			if len(arg) > 0 && arg[0] == '-' {
 				return opts, nil, fmt.Errorf("unknown flag %s", arg)
