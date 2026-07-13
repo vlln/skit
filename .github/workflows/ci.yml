@@ -49,4 +49,4 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: check
+          args: check --deprecated
