@@ -92,8 +92,11 @@ When referring to files inside the skill directory (e.g., scripts, assets, refer
   ```
   Here, `_S` (without `$`) is the actual environment variable name; `$_S` in documentation is the placeholder notation.
 - Do not use bare relative paths such as `scripts/run.sh` or `./assets/config.yaml`, because the agent may resolve them relative to its current working directory, not the skill directory.
+- When a script has many parameters, describe only its core function in SKILL.md and direct the agent to `--help` for the full usage. Do not exhaustively list every flag.
 
-This convention ensures that instructions in SKILL.md are unambiguous and reproducible across different invocation contexts.
+Every SKILL.md that uses `$_S` must include a one-line definition near the top of its body, so the consuming agent knows what it means:
+
+> `$_S` — placeholder for this skill's root directory. Set `_S` to the actual path before running commands.
 
 ## Frontmatter
 
