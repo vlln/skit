@@ -62,6 +62,24 @@ arm64 | aarch64) arch="arm64" ;;
 *) echo "skit installer: unsupported architecture: $arch" >&2; exit 1 ;;
 esac
 
+if [ -x "${install_dir}/skit" ]; then
+	installed_version="$("${install_dir}/skit" version 2>/dev/null | sed -n 's/^skit //p')"
+	if [ "$version" = "latest" ]; then
+		resolved="$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+		resolved="${resolved#v}"
+		if [ -n "$resolved" ] && [ "$installed_version" = "$resolved" ]; then
+			echo "skit $installed_version is already installed at ${install_dir}/skit"
+			exit 0
+		fi
+	else
+		want="${version#v}"
+		if [ "$installed_version" = "$want" ]; then
+			echo "skit $installed_version is already installed at ${install_dir}/skit"
+			exit 0
+		fi
+	fi
+fi
+
 if [ "$version" = "latest" ]; then
 	base="https://github.com/$repo/releases/latest/download"
 else
