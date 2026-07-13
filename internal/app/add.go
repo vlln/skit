@@ -64,6 +64,7 @@ func Add(req AddRequest) (AddResult, error) {
 
 	workRoot := src.Locator
 	cleanup := func() {}
+	var resolvedSHA string
 	if isGitProvider(src.Type) {
 		if err := resolveTreeSource(ctx(req.Context), &src); err != nil {
 			return result, err
@@ -75,6 +76,7 @@ func Add(req AddRequest) (AddResult, error) {
 		}
 		workRoot = clone.Dir
 		src.Ref = clone.Ref
+		resolvedSHA = clone.ResolvedRef
 		cleanup = func() { _ = gitfetch.RemoveUnder(clone.Dir, tmpRoot()) }
 		defer cleanup()
 	} else if src.Type != source.Local {
@@ -130,6 +132,26 @@ func Add(req AddRequest) (AddResult, error) {
 		if req.Name != "" {
 			name = req.Name
 		}
+		if !req.Force && resolvedSHA != "" {
+			if existing, ok := manifest.Skills[name]; ok &&
+				existing.Source.Locator == src.Locator &&
+				existing.Source.Ref == src.Ref &&
+				existing.Source.SHA == resolvedSHA {
+				installDir := filepath.Join(dataRoot(), filepath.FromSlash(existing.Path))
+				for _, dir := range activeDirs {
+					activePath, err := activateNameInDir(dir, name, installDir, req.Force)
+					if err != nil {
+						return result, err
+					}
+					result.ActivePaths = append(result.ActivePaths, activePath)
+				}
+				entry := existing
+				entry.Agents = agents
+				manifest.Skills[name] = entry
+				result.Entries = append(result.Entries, entry)
+				continue
+			}
+		}
 		progress("copy " + name)
 		installDir, err := safeChild(installedSkillsRoot(), name)
 		if err != nil {
@@ -155,6 +177,7 @@ func Add(req AddRequest) (AddResult, error) {
 				Ref:     src.Ref,
 				Subpath: sourceSubpath(src, parsed.Root, workRoot),
 				Skill:   parsed.Name,
+				SHA:     resolvedSHA,
 			},
 			Path:   filepath.ToSlash(filepath.Join("skills", name)),
 			Agents: agents,

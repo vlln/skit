@@ -31,6 +31,7 @@ type ManifestSource struct {
 	Ref     string `json:"ref,omitempty"`
 	Subpath string `json:"subpath,omitempty"`
 	Skill   string `json:"skill,omitempty"`
+	SHA     string `json:"sha,omitempty"`
 }
 
 func dataRoot() string {
