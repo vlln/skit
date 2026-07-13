@@ -34,16 +34,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 		printHelp(stdout)
 		return 0
-	case "version", "--version", "-v":
-		if len(args) > 1 && args[1] == "--check" {
-			return runVersionCheck(stdout, stderr)
-		}
-		if len(args) > 1 {
-			fmt.Fprintf(stderr, "skit version: unknown argument %q\n", args[1])
-			return 2
-		}
+	case "--version", "-v":
 		fmt.Fprintf(stdout, "skit %s\n", version)
-		maybePrintUpdate(stderr)
 		return 0
 	case "search", "find":
 		if helpRequested(args[1:]) {
@@ -80,6 +72,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return printCommandHelp("update", stdout, stderr)
 		}
 		return runUpdate(args[1:], stdout, stderr)
+	case "upgrade":
+		return runUpgrade(stdout, stderr)
 	case "check", "doctor":
 		return runCheck(args[1:], stdout, stderr)
 	case "init":
@@ -139,8 +133,8 @@ func printCommandHelp(command string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "  --full-depth    Search recursively when installing a source")
 		fmt.Fprintln(stdout, "  --force         Replace an existing non-symlink active path")
 		fmt.Fprintln(stdout, "  --dir           Copy Skills into a directory without creating a")
-			fmt.Fprintln(stdout, "                  manifest or symlinks, for use in CI / Docker")
-			fmt.Fprintln(stdout, "  --dry-run       Preview manifest installation without changing state")
+		fmt.Fprintln(stdout, "                  manifest or symlinks, for use in CI / Docker")
+		fmt.Fprintln(stdout, "  --dry-run       Preview manifest installation without changing state")
 		fmt.Fprintln(stdout, "  --json          Print JSON")
 	case "source", "sources":
 		fmt.Fprintln(stdout, "Usage:")
@@ -198,6 +192,11 @@ func printCommandHelp(command string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "Useful flags:")
 		fmt.Fprintln(stdout, "  -a, --agent     Also refresh active links for selected agents")
 		fmt.Fprintln(stdout, "  --json          Print JSON")
+	case "upgrade":
+		fmt.Fprintln(stdout, "Usage:")
+		fmt.Fprintln(stdout, "  skit upgrade")
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Check for available skit updates and print the upgrade command.")
 	case "init":
 		fmt.Fprintln(stdout, "Usage:")
 		fmt.Fprintln(stdout, "  skit init <name>")
@@ -226,10 +225,10 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, "  list         List installed Skills")
 	fmt.Fprintln(w, "  remove       Remove installed or active Skills")
 	fmt.Fprintln(w, "  update       Refresh installed Skills from their sources")
+	fmt.Fprintln(w, "  upgrade      Check for skit updates")
 	fmt.Fprintln(w, "  check        Check local Skills and active links")
 	fmt.Fprintln(w, "  init         Create a Skill repository template")
 	fmt.Fprintln(w, "  help         Show help")
-	fmt.Fprintln(w, "  version      Show version; use --check to check for updates")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Concepts:")
 	fmt.Fprintln(w, "  Installed Skills live under XDG_DATA_HOME/skit/skills.")
@@ -680,7 +679,6 @@ func runInstallSource(args []string, stdout, stderr io.Writer) int {
 			printAddResult(stdout, stderr, result)
 		}
 	}
-	maybePrintUpdate(stderr)
 	return 0
 }
 
@@ -829,27 +827,18 @@ func compactWarnings(warnings []string) []string {
 	return out
 }
 
-func runVersionCheck(stdout, stderr io.Writer) int {
-	fmt.Fprintf(stdout, "skit %s\n", version)
+func runUpgrade(stdout, stderr io.Writer) int {
 	result, err := updatecheck.Check(context.Background(), updatecheck.Request{Current: version, Force: true})
 	if err != nil {
-		fmt.Fprintln(stderr, "skit version:", err)
+		fmt.Fprintln(stderr, "skit upgrade:", err)
 		return 1
 	}
 	if result.Available {
 		fmt.Fprintln(stderr, updatecheck.Message(result))
 	} else {
-		fmt.Fprintln(stdout, "skit is up to date")
+		fmt.Fprintf(stdout, "skit is up to date (%s)\n", version)
 	}
 	return 0
-}
-
-func maybePrintUpdate(stderr io.Writer) {
-	result, err := updatecheck.Check(context.Background(), updatecheck.Request{Current: version})
-	if err != nil || !result.Available {
-		return
-	}
-	fmt.Fprintln(stderr, updatecheck.Message(result))
 }
 
 func runInstall(args []string, stdout, stderr io.Writer) int {
@@ -1034,7 +1023,6 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	for _, warning := range compactWarnings(result.Warnings) {
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}
-	maybePrintUpdate(stderr)
 	return 0
 }
 
