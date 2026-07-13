@@ -34,7 +34,7 @@ archives:
 checksum:
   name_template: checksums.txt
 
-homebrews:
+brews:
   - name: skit
     ids:
       - default
