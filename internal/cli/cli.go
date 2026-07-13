@@ -138,7 +138,9 @@ func printCommandHelp(command string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "  --all           Install every discovered non-internal Skill")
 		fmt.Fprintln(stdout, "  --full-depth    Search recursively when installing a source")
 		fmt.Fprintln(stdout, "  --force         Replace an existing non-symlink active path")
-		fmt.Fprintln(stdout, "  --dry-run       Preview manifest installation without changing state")
+		fmt.Fprintln(stdout, "  --dir           Copy Skills into a directory without creating a")
+			fmt.Fprintln(stdout, "                  manifest or symlinks, for use in CI / Docker")
+			fmt.Fprintln(stdout, "  --dry-run       Preview manifest installation without changing state")
 		fmt.Fprintln(stdout, "  --json          Print JSON")
 	case "source", "sources":
 		fmt.Fprintln(stdout, "Usage:")
