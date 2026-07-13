@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -331,17 +332,19 @@ func selectSkills(skills []skill.Skill, wanted []string, all bool) ([]skill.Skil
 }
 
 func addToDir(targetDir string, selected []skill.Skill, customName string, src source.Source, workRoot string, progress func(string), result AddResult) (AddResult, error) {
+	targetDir = os.ExpandEnv(targetDir)
+	abs, err := filepath.Abs(targetDir)
+	if err != nil {
+		return result, err
+	}
+	targetDir = abs
 	for _, parsed := range selected {
 		name := parsed.Name
 		if customName != "" {
 			name = customName
 		}
 		var installDir string
-		if len(selected) == 1 {
-			installDir = targetDir
-		} else {
-			installDir = filepath.Join(targetDir, name)
-		}
+		installDir = filepath.Join(targetDir, name)
 		progress("copy " + name)
 		if err := copySkillTree(parsed.Root, installDir); err != nil {
 			return result, err

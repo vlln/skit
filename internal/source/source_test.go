@@ -181,3 +181,13 @@ func TestRejectTraversal(t *testing.T) {
 		t.Fatal("expected traversal error")
 	}
 }
+
+func TestParseGitHubURLSubpath(t *testing.T) {
+	src, err := Parse("https://github.com/vlln/bio-skills/skills/biocontainers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src.Type != GitHub || src.Locator != "vlln/bio-skills" || src.Subpath != "skills/biocontainers" || !src.Implemented {
+		t.Fatalf("src = %+v", src)
+	}
+}

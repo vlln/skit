@@ -266,6 +266,8 @@ func parseGitHubURL(u *url.URL) (Source, error) {
 		if len(parts) > 4 {
 			src.Subpath = strings.Join(parts[4:], "/")
 		}
+	} else if len(parts) > 2 {
+		src.Subpath = strings.Join(parts[2:], "/")
 	}
 	return src, nil
 }
