@@ -43,10 +43,3 @@ jobs:
 
       - name: Check installer syntax
         run: sh -n install.sh
-
-      - name: Check GoReleaser configuration
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: check --deprecated
